@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Cartograph pre-push hook for __GITHUB_USER__'s forks.
+# Rejects pushes to the wrong host alias and branches named with forbidden tokens.
+
+set -euo pipefail
+
+remote="$1"
+url="$2"
+
+# 1. Remote URL must use the configured host alias.
+if [[ "$url" != git@__SSH_HOST_ALIAS__:* ]]; then
+  echo "pre-push: refusing push to '$url'" >&2
+  echo "pre-push: forks must push only via git@__SSH_HOST_ALIAS__: aliases." >&2
+  exit 1
+fi
+
+# 2. Reject branches with forbidden tokens.
+forbidden='__FORBIDDEN_REGEX__'
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "${local_ref:-}" ]] && continue
+  if echo "$local_ref" | grep -iE "$forbidden" >/dev/null; then
+    echo "pre-push: refusing to push branch '$local_ref'" >&2
+    echo "pre-push: branch names must not contain forbidden tokens." >&2
+    exit 1
+  fi
+done
+
+exit 0

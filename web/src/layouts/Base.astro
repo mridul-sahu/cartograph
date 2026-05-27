@@ -1,0 +1,151 @@
+---
+import '~/styles/global.css';
+import ThemeToggle from '~/components/islands/ThemeToggle.tsx';
+import CommandPalette from '~/components/islands/CommandPalette.tsx';
+import KeyboardShortcuts from '~/components/islands/KeyboardShortcuts.tsx';
+import Wordmark from '~/components/Wordmark.astro';
+
+// UI overhaul (claude-designs/cartograph/ui-overhaul/) — six top-level
+// destinations only. No `more ▾` overflow. Repo switcher moves to the
+// breadcrumb row so it only appears when in repo scope.
+interface Props {
+  title: string;
+  description?: string;
+  breadcrumbs?: { label: string; href?: string }[];
+  fullWidth?: boolean;
+  /** When set, renders a repo-aware sub-bar with the active repo + switcher. */
+  activeRepo?: string;
+}
+
+const {
+  title,
+  description = 'layered knowledge for stable codebases',
+  breadcrumbs = [],
+  fullWidth = false,
+  activeRepo,
+} = Astro.props;
+const pathname = Astro.url.pathname;
+
+// Primary destinations. Order is product order, not alphabetical.
+const primaryNav = [
+  { href: '/',           label: 'home',     match: (p: string) => p === '/' },
+  { href: '/prs/',       label: 'prs',      match: (p: string) => p.startsWith('/prs') },
+  { href: '/repo/',      label: 'repos',    match: (p: string) => p.startsWith('/repo/') || p.startsWith('/browse/') || p.startsWith('/setups/') || p.startsWith('/ramp-up/') },
+  { href: '/episodes/',  label: 'episodes', match: (p: string) => p.startsWith('/episodes') || p.startsWith('/sessions') },
+  { href: '/library/',   label: 'library',  match: (p: string) => p.startsWith('/library') || p.startsWith('/designs') || p.startsWith('/papers') || p.startsWith('/research') || p.startsWith('/walkthroughs') || p.startsWith('/drafts') },
+  { href: '/seams/',     label: 'seams',    match: (p: string) => p.startsWith('/seams') },
+  { href: '/promotions/', label: 'promotions', match: (p: string) => p.startsWith('/promotions') },
+  { href: '/console/',   label: 'console',  match: (p: string) => p.startsWith('/console') || p.startsWith('/status') || p.startsWith('/diary') || p.startsWith('/drift') },
+  { href: '/about/',     label: 'about',    match: (p: string) => p.startsWith('/about') },
+];
+
+const repos = ['jax', 'xla', 'orbax', 'tunix', 'tokamax'];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} · cartograph</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=VT323&display=swap"
+    />
+    <script is:inline>
+      // Apply theme before paint to avoid FOUC.
+      (function () {
+        try {
+          var t = window.localStorage.getItem('cartograph-theme');
+          if (!t) {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.dataset.theme = t;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <header class="border-b-2 border-border bg-bg sticky top-0 z-30">
+      {/* Primary nav — 6 items + theme toggle on the right. Nothing else. */}
+      <div class="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
+        <a href="/" class="flex items-center gap-3 no-underline flex-shrink-0" aria-label="cartograph home">
+          <Wordmark />
+        </a>
+        <nav aria-label="Primary" class="hidden md:flex items-center gap-0.5 font-mono text-xs flex-1 min-w-0">
+          {primaryNav.map((item) => (
+            <a
+              href={item.href}
+              class={`px-3 py-1.5 whitespace-nowrap ${item.match(pathname) ? 'border-b-[3px] border-accent text-accent' : 'text-muted hover:text-fg'}`}
+            >{item.label}</a>
+          ))}
+        </nav>
+        <CommandPalette client:load />
+        <ThemeToggle client:load />
+      </div>
+
+      {/* Sub-bar: repo switcher (when in repo scope) OR breadcrumbs.
+          Never both — that was the old 3-row chrome problem. */}
+      {(activeRepo || breadcrumbs.length > 0) && (
+        <div class="border-t-2 border-border bg-muted-bg">
+          <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2 font-mono text-xs">
+            {breadcrumbs.length > 0 ? (
+              <div class="min-w-0 truncate">
+                {breadcrumbs.map((b, i) => (
+                  <>
+                    {i > 0 && <span class="text-muted mx-1.5">/</span>}
+                    {b.href ? (
+                      <a href={b.href} class="text-muted hover:text-accent">{b.label}</a>
+                    ) : (
+                      <span class="text-fg">{b.label}</span>
+                    )}
+                  </>
+                ))}
+              </div>
+            ) : <div />}
+            {activeRepo && (
+              <nav aria-label="Repo switcher" class="flex items-center gap-0.5">
+                <span class="text-muted uppercase tracking-widest mr-2">repo</span>
+                {repos.map((r) => (
+                  <a
+                    href={`/repo/${r}/`}
+                    class={`px-2 py-0.5 ${r === activeRepo ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
+                  >{r}</a>
+                ))}
+              </nav>
+            )}
+          </div>
+        </div>
+      )}
+    </header>
+
+    <main class={fullWidth ? 'flex-1 w-full px-3 py-3' : 'flex-1 mx-auto w-full max-w-7xl px-6 py-8'}>
+      <slot />
+    </main>
+
+    {!fullWidth && (
+      <footer class="border-t-2 border-border mt-12">
+        <div class="mx-auto max-w-7xl px-6 py-4 font-mono text-xs text-muted flex items-center justify-between">
+          <span>cartograph · <code>127.0.0.1:47777</code> · <code><cartograph-root>/</code></span>
+          <span>read the markdown directly</span>
+        </div>
+      </footer>
+    )}
+    <KeyboardShortcuts client:load />
+  </body>
+</html>
+
+<style is:global>
+  html, body { background: var(--bg); color: var(--fg); }
+  a { color: inherit; }
+  /* shiki double-theme — light by default, dark when [data-theme="dark"] is set. */
+  html[data-theme='dark'] .shiki,
+  html[data-theme='dark'] .shiki span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+  }
+</style>

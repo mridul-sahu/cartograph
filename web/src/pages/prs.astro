@@ -1,0 +1,28 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import PRDashboard from '~/components/islands/PRDashboard.tsx';
+---
+
+<Base title="prs" breadcrumbs={[{ label: 'prs' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">PRs</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      Every pull request opened by <span class="text-fg font-mono">[your-github-user]</span>
+      across the tracked upstream repos. Click a row to open the PR on GitHub,
+      or click a repo label to dive into that fork's notes + stack.
+    </p>
+    <p class="mt-2 text-sm text-muted max-w-3xl">
+      Stacks are managed via
+      <a href="https://abhinav.github.io/git-spice/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">git-spice</a>
+      (<code>gs</code>). After a PR merges, run <code>/stack-sync</code> to
+      pull main + cascade-rebase descendants; <code>/stack-submit</code> to
+      push every branch and refresh each PR. Per-repo stacks live at
+      <code>/repo/&lt;repo&gt;/stack/</code>.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / prs" title="Pull requests" right="live · /api/prs" padded={false}>
+    <PRDashboard client:load />
+  </Card>
+</Base>

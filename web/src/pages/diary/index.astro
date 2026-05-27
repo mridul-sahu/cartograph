@@ -1,0 +1,50 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import { readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+const dir = join(ROOT, 'diary');
+
+const entries: { slug: string; month: string }[] = [];
+if (existsSync(dir)) {
+  for (const m of readdirSync(dir).filter((d) => /^\d{4}-\d{2}$/.test(d)).sort().reverse()) {
+    for (const f of readdirSync(join(dir, m)).filter((f) => f.endsWith('.md')).sort().reverse()) {
+      entries.push({ slug: f.replace(/\.md$/, ''), month: m });
+    }
+  }
+}
+---
+
+<Base title="diary" breadcrumbs={[{ label: 'diary' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Diary</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      Once-per-day digest of what the chassis did while you weren't looking —
+      episodes added, topics revised, drift opened/closed, queue depth.
+      Written by <code>scripts/diary.sh</code> on the first SessionStart of each calendar day.
+    </p>
+  </section>
+
+  <Card eyebrow={`results · ${entries.length}`} title="Daily digests" padded={false}>
+    {entries.length === 0 ? (
+      <p class="p-5 text-sm text-muted">No diary entries yet.</p>
+    ) : (
+      <ul class="divide-y-2 divide-[var(--border-soft)]">
+        {entries.map((e, i) => (
+          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <a
+              href={`/diary/${e.slug}/`}
+              class="block px-5 py-3 hover:bg-[var(--surface-2)] no-underline text-fg flex items-baseline justify-between"
+            >
+              <span class="font-mono text-sm">{e.slug}</span>
+              <span class="font-mono text-xs text-muted">{e.month}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </Card>
+</Base>

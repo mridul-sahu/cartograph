@@ -1,0 +1,220 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import ContentActions from '~/components/islands/ContentActions.tsx';
+import EpisodeReview from '~/components/islands/EpisodeReview.tsx';
+import BookmarkButton from '~/components/islands/BookmarkButton.tsx';
+import RelatedNotes from '~/components/islands/RelatedNotes.tsx';
+import Backlinks from '~/components/islands/Backlinks.tsx';
+import { loadEpisodes } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+function normalizeNullish(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s || s === '~') return null;
+  return s;
+}
+
+export function getStaticPaths() {
+  return loadEpisodes().map((e) => ({ params: { slug: e.slug } }));
+}
+
+const { slug } = Astro.params as { slug: string };
+const all = loadEpisodes();
+const doc = all.find((e) => e.slug === slug);
+if (!doc) {
+  return Astro.redirect('/episodes/');
+}
+
+const { html, headings } = await renderMarkdown(doc.body);
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+// Prev / next within the global episode stream, newest-first by date.
+const sorted = [...all].sort((a, b) =>
+  String(b.data.date ?? '').localeCompare(String(a.data.date ?? '')),
+);
+const idx = sorted.findIndex((e) => e.slug === slug);
+const prev = idx > 0 ? sorted[idx - 1] : null;
+const next = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null;
+
+const tags = Array.isArray(doc.data.tags) ? (doc.data.tags as string[]) : [];
+const supersededBy = doc.data.superseded_by;
+const autoDrafted = doc.data.auto_drafted === true;
+const sourceSession = typeof doc.data.source_session === 'string'
+  ? doc.data.source_session
+  : null;
+const distilledInto = doc.data.distilled_into;
+const isStale =
+  (supersededBy && supersededBy !== '~') ||
+  (distilledInto && distilledInto !== '~');
+const filesTouched = Array.isArray(doc.data.files_touched)
+  ? (doc.data.files_touched as string[])
+  : [];
+---
+
+<Base
+  title={`episode · ${slug}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'episodes', href: '/episodes/' },
+    { label: slug },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2 flex items-center gap-3 flex-wrap">
+          <span>episode</span>
+          {doc.data.repo && (
+            <>
+              <span class="text-border">·</span>
+              <a href={`/repo/${doc.data.repo}/`} class="hover:text-accent">
+                {doc.data.repo}
+              </a>
+            </>
+          )}
+          {doc.data.synthesized_from_exploration && (
+            <Chip>synthesized</Chip>
+          )}
+          {autoDrafted && <Chip tone="warn">auto-drafted · review me</Chip>}
+          {isStale && <Chip tone="warn">superseded</Chip>}
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tightish font-mono break-words">
+          {slug}
+        </h1>
+        {doc.data.date && (
+          <p class="mt-2 font-mono text-xs text-muted">
+            {formatDate(String(doc.data.date))}
+          </p>
+        )}
+      </header>
+      <div class="prose-cartograph" set:html={html} />
+
+      {(prev || next) && (
+        <nav class="mt-16 grid grid-cols-2 gap-4 border-t-2 border-border pt-6">
+          {prev ? (
+            <a
+              href={`/episodes/${prev.slug}/`}
+              class="brutal-card p-4 no-underline"
+            >
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">
+                ← prev (newer)
+              </div>
+              <div class="font-mono mt-1 truncate">{prev.slug}</div>
+            </a>
+          ) : (
+            <span />
+          )}
+          {next ? (
+            <a
+              href={`/episodes/${next.slug}/`}
+              class="brutal-card p-4 text-right no-underline"
+            >
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">
+                next (older) →
+              </div>
+              <div class="font-mono mt-1 truncate">{next.slug}</div>
+            </a>
+          ) : (
+            <span />
+          )}
+        </nav>
+      )}
+    </article>
+
+    <aside class="lg:sticky lg:top-32 self-start space-y-6 text-sm">
+      {(() => {
+        // Episode path: episodes/YYYY-MM/<slug>.md. Derive month from the
+        // slug prefix (slugs are dated as YYYY-MM-DD-foo).
+        const month = slug.slice(0, 7);
+        const notePath = `episodes/${month}/${slug}.md`;
+        return (
+          <>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">pin</h3>
+              <BookmarkButton path={notePath} title={slug} client:load />
+            </div>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">related</h3>
+              <RelatedNotes path={notePath} client:visible />
+            </div>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">backlinks</h3>
+              <Backlinks path={notePath} client:visible />
+            </div>
+          </>
+        );
+      })()}
+
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">
+          frontmatter
+        </h3>
+        <dl class="grid grid-cols-[8rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">slug</dt><dd class="break-all">{slug}</dd>
+          {doc.data.date && (<><dt class="text-muted">date</dt><dd>{formatDate(String(doc.data.date))}</dd></>)}
+          {doc.data.repo && (<><dt class="text-muted">repo</dt><dd>{String(doc.data.repo)}</dd></>)}
+          <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
+          {tags.length > 0 && (
+            <>
+              <dt class="text-muted">tags</dt>
+              <dd class="flex flex-wrap gap-1">
+                {tags.map((t) => (
+                  <code class="text-fg">{t}</code>
+                ))}
+              </dd>
+            </>
+          )}
+        </dl>
+      </div>
+
+      {filesTouched.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-2">
+            files touched
+          </h3>
+          <ul class="space-y-1 font-mono text-xs">
+            {filesTouched.map((f) => (
+              <li class="break-all text-muted">{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <EpisodeReview
+        slug={slug}
+        initialReviewed={normalizeNullish(doc.data.reviewed_by_human)}
+        initialRejected={doc.data.rejected === true}
+        initialRevisedAfterRejection={normalizeNullish(
+          doc.data.revised_after_rejection,
+        )}
+        client:load
+      />
+
+      <ContentActions
+        kind="episode"
+        repo={typeof doc.data.repo === 'string' ? doc.data.repo : undefined}
+        slug={slug}
+        filePath={`episodes/${doc.month}/${slug}.md`}
+        client:load
+      />
+
+      {tocHeadings.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">
+            on this page
+          </h3>
+          <ul class="space-y-1.5 text-sm">
+            {tocHeadings.map((h) => (
+              <li class={h.depth === 3 ? 'pl-3 text-muted' : ''}>
+                <a href={`#${h.id}`} class="hover:text-accent">{h.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </aside>
+  </div>
+</Base>

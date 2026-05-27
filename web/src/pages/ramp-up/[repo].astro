@@ -1,0 +1,146 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import { loadAllRampUps } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+export function getStaticPaths() {
+  // The ramp-up loader includes everything in the dir; the README is its own
+  // page (the index) and never gets a `[repo]` route.
+  return loadAllRampUps()
+    .filter((d) => d.slug !== 'README')
+    .map((d) => ({ params: { repo: d.slug } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+const all = loadAllRampUps()
+  .filter((d) => d.slug !== 'README')
+  .sort((a, b) => a.slug.localeCompare(b.slug));
+const doc = all.find((d) => d.slug === repo);
+if (!doc) {
+  return Astro.redirect('/ramp-up/');
+}
+
+function stripFirstH1(md: string): string {
+  return md.replace(/^#\s+.+?\r?\n+/, '');
+}
+function extractTitle(body: string, fallback: string): string {
+  const m = body.match(/^#\s+(.+?)\s*$/m);
+  if (!m) return fallback;
+  return m[1].replace(/`/g, '');
+}
+
+const title = extractTitle(doc.body, repo);
+const { html, headings } = await renderMarkdown(stripFirstH1(doc.body));
+
+// Treat any h2 starting with "Day" as a special anchor for the sidebar.
+const dayHeadings = headings.filter(
+  (h) => h.depth === 2 && /^day\s+\d+/i.test(h.text.trim())
+);
+const otherH2 = headings.filter(
+  (h) => h.depth === 2 && !/^day\s+\d+/i.test(h.text.trim())
+);
+const tocH3 = headings.filter((h) => h.depth === 3);
+
+const days = doc.data.estimated_days;
+const lr = doc.data.last_revised;
+
+const idx = all.findIndex((d) => d.slug === repo);
+const prev = idx > 0 ? all[idx - 1] : null;
+const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+---
+
+<Base
+  title={`${repo} · ramp-up`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'ramp-up', href: '/ramp-up/' },
+    { label: repo },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <Chip tone="accent">ramp-up</Chip>
+          <Chip>{repo}</Chip>
+          {days != null && <Chip>{String(days)}-day path</Chip>}
+          {lr && <Chip>revised · {formatDate(String(lr))}</Chip>}
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tightish leading-[1.1]">{title}</h1>
+        <p class="mt-3 font-mono text-xs text-muted">
+          {doc.wordCount.toLocaleString()} words · ~{Math.max(1, Math.round(doc.wordCount / 220))} min read
+        </p>
+      </header>
+
+      <div class="prose-cartograph" set:html={html} />
+
+      {(prev || next) && (
+        <nav class="mt-16 grid grid-cols-1 md:grid-cols-2 gap-4 border-t-2 border-border pt-6">
+          {prev ? (
+            <a href={`/ramp-up/${prev.slug}/`} class="brutal-card p-4 no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">← prev</div>
+              <div class="font-mono mt-1">{prev.slug}</div>
+            </a>
+          ) : <span />}
+          {next ? (
+            <a href={`/ramp-up/${next.slug}/`} class="brutal-card p-4 text-right no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">next →</div>
+              <div class="font-mono mt-1">{next.slug}</div>
+            </a>
+          ) : <span />}
+        </nav>
+      )}
+    </article>
+
+    <aside class="lg:sticky lg:top-24 self-start space-y-6 text-sm">
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">frontmatter</h3>
+        <dl class="grid grid-cols-[6.5rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">repo</dt><dd>{repo}</dd>
+          {days != null && (<><dt class="text-muted">days</dt><dd>{String(days)}</dd></>)}
+          {lr && (<><dt class="text-muted">revised</dt><dd>{formatDate(String(lr))}</dd></>)}
+          <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
+        </dl>
+      </div>
+
+      {dayHeadings.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">days</h3>
+          <ol class="space-y-1.5 font-mono text-sm list-none m-0">
+            {dayHeadings.map((h) => (
+              <li>
+                <a
+                  href={`#${h.id}`}
+                  class="block px-2 py-1 border-2 border-border bg-muted-bg hover:bg-accent hover:text-accent-fg transition-colors"
+                  style={{ boxShadow: '2px 2px 0 0 var(--shadow)' }}
+                >
+                  {h.text}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {(otherH2.length > 0 || tocH3.length > 0) && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">on this page</h3>
+          <ul class="space-y-1.5 text-sm">
+            {[...otherH2, ...tocH3]
+              .sort((a, b) => headings.indexOf(a) - headings.indexOf(b))
+              .map((h) => (
+                <li class={h.depth === 3 ? 'pl-3 text-muted' : ''}>
+                  <a href={`#${h.id}`} class="hover:text-accent leading-snug block">{h.text}</a>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+    </aside>
+  </div>
+
+  <MermaidRehydrator client:visible />
+</Base>

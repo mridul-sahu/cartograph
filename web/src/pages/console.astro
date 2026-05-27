@@ -1,0 +1,138 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import QueuePanel from '~/components/islands/QueuePanel.tsx';
+import LintPanel from '~/components/islands/LintPanel.tsx';
+import PromoteCandidates from '~/components/islands/PromoteCandidates.tsx';
+import DisciplineScorecard from '~/components/islands/DisciplineScorecard.tsx';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Console — the "work to do" surface. Single-column stream so each section
+// reads top-to-bottom. Freshness was pulled out (it duplicates Home's repos
+// panel and inflated the page with heavy stat tiles); use Home for that.
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
+function readDriftReports() {
+  const dir = join(ROOT, '.drift-reports');
+  if (!existsSync(dir)) return [] as { repo: string; commits: number | null }[];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => {
+      const text = readFileSync(join(dir, f), 'utf8');
+      const m = text.match(/\*\*(\d+) commit/);
+      return { repo: f.replace(/\.md$/, ''), commits: m ? parseInt(m[1], 10) : null };
+    });
+}
+
+function readTopicDriftReports() {
+  const dir = join(ROOT, '.drift-reports', 'topics');
+  if (!existsSync(dir)) return [] as { repo: string; slug: string; path: string }[];
+  const out: { repo: string; slug: string; path: string }[] = [];
+  for (const repo of readdirSync(dir)) {
+    const repoDir = join(dir, repo);
+    for (const f of readdirSync(repoDir)) {
+      if (!f.endsWith('.md')) continue;
+      out.push({ repo, slug: f.replace(/\.md$/, ''), path: `.drift-reports/topics/${repo}/${f}` });
+    }
+  }
+  return out;
+}
+
+function readDiaryEntries(limit = 7) {
+  const dir = join(ROOT, 'diary');
+  if (!existsSync(dir)) return [] as { date: string; path: string }[];
+  const out: { date: string; path: string }[] = [];
+  const months = readdirSync(dir).filter((d) => /^\d{4}-\d{2}$/.test(d)).sort().reverse();
+  for (const m of months) {
+    const files = readdirSync(join(dir, m)).filter((f) => f.endsWith('.md')).sort().reverse();
+    for (const f of files) {
+      out.push({ date: f.replace(/\.md$/, ''), path: `diary/${m}/${f}` });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
+const drift = readDriftReports();
+const topicDrift = readTopicDriftReports();
+const diary = readDiaryEntries();
+---
+
+<Base title="console" breadcrumbs={[{ label: 'console' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Console</h1>
+    <p class="mt-2 text-muted text-base max-w-2xl">
+      What the chassis is asking you to review — drift, promotion candidates, lint debt, recent diary entries.
+      For repo state and upstream activity, see <a href="/" class="text-accent hover:underline">home</a>.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / queue" title="Review queue" right="bless · anchor · drift — claude decides + acts">
+    <QueuePanel client:load />
+  </Card>
+
+  <Card eyebrow="02 / drift" title="Drift reports" right={`${drift.length} repo · ${topicDrift.length} topic`} padded={false}>
+    {drift.length === 0 && topicDrift.length === 0 ? (
+      <p class="p-5 text-sm text-muted">No drift reports open.</p>
+    ) : (
+      <ul class="divide-y divide-[var(--border-soft)]">
+        {drift.map((d, i) => (
+          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <a href={`/drift/${d.repo}/`} class="block px-5 py-2 hover:bg-[var(--surface-2)] flex items-center justify-between font-mono text-xs no-underline text-fg">
+              <span><span class="text-muted">repo</span> · <span class="text-accent">{d.repo}</span></span>
+              <span class="text-muted">{d.commits !== null ? `${d.commits} commits` : '?'}</span>
+            </a>
+          </li>
+        ))}
+        {topicDrift.map((t, i) => (
+          <li class={(drift.length + i) % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <a href={`/repo/${t.repo}/topics/${t.slug}/`} class="block px-5 py-2 hover:bg-[var(--surface-2)] flex items-center justify-between font-mono text-xs no-underline text-fg">
+              <span><span class="text-muted">topic</span> · <span class="text-accent">{t.repo}</span>/<span>{t.slug}</span></span>
+              <span class="text-muted">drift report ↗</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </Card>
+
+  <Card eyebrow="03 / promotions" title="Promotion candidates" padded={false}>
+    <Fragment slot="header">
+      <div class="min-w-0 flex-1">
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted leading-none mb-1">03 / promotions</div>
+        <h3 class="text-xl font-bold tracking-tight leading-tight truncate">Promotion candidates</h3>
+      </div>
+      <div class="font-mono text-xs text-muted whitespace-nowrap flex-shrink-0">
+        ≥3 undistilled · auto-runs at SessionStart · <a href="/promotions/" class="text-accent hover:underline">history →</a>
+      </div>
+    </Fragment>
+    <PromoteCandidates client:load />
+  </Card>
+
+  <Card eyebrow="04 / discipline" title="Discipline scorecard" right="§1a + §4 · last 5 sessions" padded={false}>
+    <DisciplineScorecard client:load />
+  </Card>
+
+  <Card eyebrow="05 / lint" title="Content lint" right="quality bar">
+    <LintPanel client:load />
+  </Card>
+
+  <Card eyebrow="06 / diary" title="Recent diary entries" right={`${diary.length}`} padded={false}>
+    {diary.length === 0 ? (
+      <p class="p-5 text-sm text-muted">No diary entries yet. <code>scripts/diary.sh</code> writes one once per day.</p>
+    ) : (
+      <ul class="divide-y divide-[var(--border-soft)]">
+        {diary.map((d, i) => (
+          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <a href={`/diary/${d.date}/`} class="block px-5 py-2 hover:bg-[var(--surface-2)] flex items-center justify-between font-mono text-xs no-underline">
+              <span class="text-accent">{d.path}</span>
+              <span class="text-muted">{d.date}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </Card>
+</Base>

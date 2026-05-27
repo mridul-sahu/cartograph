@@ -1,0 +1,65 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import StatusPane from '~/components/islands/StatusPane.tsx';
+import ActivityFeed from '~/components/islands/ActivityFeed.tsx';
+import QueuePanel from '~/components/islands/QueuePanel.tsx';
+import Whatknows from '~/components/islands/Whatknows.tsx';
+import BookmarksCard from '~/components/islands/BookmarksCard.tsx';
+import ReadingQueueCard from '~/components/islands/ReadingQueueCard.tsx';
+import { countAll } from '~/lib/content';
+
+const counts = countAll();
+---
+
+<Base title="home">
+  <section class="mb-8">
+    <div class="flex items-center gap-3 font-mono text-xs text-muted uppercase tracking-widest mb-3">
+      <span class="inline-block w-2 h-2 bg-accent" aria-hidden></span>
+      <span>cartograph · home</span>
+      <span class="text-border">·</span>
+      <span>{counts.topics} topics · {counts.walkthroughs} walkthroughs · {counts.episodes} episodes</span>
+    </div>
+    <h1 class="font-wordmark text-6xl md:text-7xl tracking-tight leading-[0.92]">
+      carto<span class="text-accent">g</span>raph
+    </h1>
+    <p class="mt-4 max-w-2xl text-base text-muted">
+      Cold-start orientation for stable codebases. What's surfaced below is what
+      needs your attention now.
+    </p>
+  </section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+    <div>
+      <Card eyebrow="01 / queue" title="Review queue" right="→ /console/review/">
+        <QueuePanel client:load />
+      </Card>
+
+      <Card eyebrow="02 / whatknows" title="What does Cartograph know about a file?">
+        <p class="text-sm text-muted mb-3">
+          Paste a code path (e.g. <code>orbax/_src/checkpointers/async_checkpointer.py</code>)
+          to see every bedrock, topic, episode, or learn note that cites it.
+        </p>
+        <Whatknows client:load />
+      </Card>
+    </div>
+
+    <div>
+      <Card eyebrow="03 / reading queue" title="Working on" right="local · this week" padded={false}>
+        <ReadingQueueCard client:load />
+      </Card>
+
+      <Card eyebrow="04 / bookmarks" title="Pinned" right="local · /api/bookmarks" padded={false}>
+        <BookmarksCard client:load />
+      </Card>
+
+      <Card eyebrow="05 / repos" title="Repos" right="drift + freshness" padded={false}>
+        <StatusPane variant="compact" client:load />
+      </Card>
+
+      <Card eyebrow="06 / activity" title="Recent upstream activity" right="last 10 commits">
+        <ActivityFeed client:visible />
+      </Card>
+    </div>
+  </div>
+</Base>

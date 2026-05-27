@@ -1,0 +1,101 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import { REPOS } from '~/lib/repos';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Render the per-repo drift report (and any per-topic drift reports) as
+// a real page rather than dumping raw markdown / 404 JSON when none exists.
+// Replaces the broken `/api/drift/<r>` link in Console.
+
+export function getStaticPaths() {
+  return REPOS.map((repo) => ({ params: { repo } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
+
+const repoReportPath = join(ROOT, '.drift-reports', `${repo}.md`);
+const repoReport = existsSync(repoReportPath) ? readFileSync(repoReportPath, 'utf8') : null;
+
+const topicReports: { slug: string; markdown: string }[] = [];
+const topicDir = join(ROOT, '.drift-reports', 'topics', repo);
+if (existsSync(topicDir)) {
+  for (const f of readdirSync(topicDir).sort()) {
+    if (!f.endsWith('.md')) continue;
+    topicReports.push({
+      slug: f.replace(/\.md$/, ''),
+      markdown: readFileSync(join(topicDir, f), 'utf8'),
+    });
+  }
+}
+
+const hasAnything = repoReport || topicReports.length > 0;
+---
+
+<Base
+  title={`drift · ${repo}`}
+  activeRepo={repo}
+  breadcrumbs={[
+    { label: 'repos', href: '/repo/' },
+    { label: repo, href: `/repo/${repo}/` },
+    { label: 'drift' },
+  ]}
+>
+  <section class="mb-6">
+    <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-1">drift</div>
+    <h1 class="text-3xl font-bold tracking-tight">{repo} — drift state</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      Bedrock and topic notes carry a <code>backfilled_from_sha</code> /
+      <code>last_revised</code> stamp. When upstream advances past those, the
+      drift checker writes a report flagging which citations may be stale.
+      Resolve by re-reading the cited code and running
+      <code>/backfill {repo}</code> (bedrock) or <code>/revise &lt;topic&gt;</code> (topic).
+    </p>
+  </section>
+
+  {!hasAnything && (
+    <Card eyebrow="state" title="No drift open" right={`workspace/${repo}/`}>
+      <p class="text-sm text-muted">
+        Upstream has not advanced past the bedrock's <code>backfilled_from_sha</code>
+        and no topic citations are flagged. Nothing to do.
+      </p>
+    </Card>
+  )}
+
+  {repoReport && (
+    <Card eyebrow="01 / bedrock drift" title={`.drift-reports/${repo}.md`} padded={true}>
+      <pre class="font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{repoReport}</pre>
+    </Card>
+  )}
+
+  {topicReports.length > 0 && (
+    <Card
+      eyebrow="02 / topic drift"
+      title="Per-topic citation drift"
+      right={`${topicReports.length} report${topicReports.length === 1 ? '' : 's'}`}
+      padded={false}
+    >
+      <ul class="divide-y-2 divide-[var(--border-soft)]">
+        {topicReports.map((t, i) => (
+          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <details>
+              <summary class="cursor-pointer px-3 py-2 hover:bg-[var(--surface-2)] flex items-baseline gap-3">
+                <span class="font-mono text-[10px] text-muted">topic</span>
+                <a
+                  href={`/repo/${repo}/topics/${t.slug}/`}
+                  class="font-mono text-sm text-accent hover:underline flex-1"
+                  onclick="event.stopPropagation()"
+                >{t.slug}</a>
+                <span class="font-mono text-[10px] text-muted">expand</span>
+              </summary>
+              <pre class="px-3 py-3 border-t border-[var(--border-soft)] font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{t.markdown}</pre>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )}
+</Base>

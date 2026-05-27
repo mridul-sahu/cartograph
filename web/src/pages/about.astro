@@ -1,0 +1,438 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+---
+
+<Base title="about" breadcrumbs={[{ label: 'about' }]}>
+  <section class="mb-10 max-w-3xl">
+    <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-2">about</div>
+    <h1 class="text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-4">
+      Cartograph is the notebook that <span class="text-accent">carries understanding forward</span>.
+    </h1>
+    <p class="text-lg text-muted leading-relaxed">
+      Five large open-source codebases — <code>jax</code>, <code>xla</code>,
+      <code>orbax</code>, <code>tunix</code>, <code>tokamax</code> — and one solo
+      developer working across them through Claude. The bottleneck isn't file
+      access; Claude already has fast tools. The bottleneck is that
+      <em>nothing persists between sessions</em>. Every Monday's exploration
+      vanishes by Friday. Every "I figured this out" insight has to be
+      re-discovered.
+    </p>
+    <p class="text-lg text-muted leading-relaxed mt-4">
+      Cartograph is the persistence layer. A folder of curated markdown files,
+      revised in place when understanding deepens. The system gets <em>better</em>
+      over time because the notes are <em>sharpened</em>, not just appended to.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / shape" title="Three layers of knowledge">
+    <p class="text-sm text-muted mb-4 max-w-3xl">
+      Every note belongs to one of three layers, distinguished by how durable
+      it is and how often it gets revised.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="border-2 border-border p-4 min-w-0">
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted">layer 1</div>
+        <div class="font-bold text-lg mb-2">bedrock</div>
+        <p class="text-sm text-muted">
+          <code class="break-all">guides/&lt;repo&gt;/&lcub;overview,architecture,conventions&rcub;.md</code>.
+          Durable, rarely revised, high authority. The "you have to know this"
+          content for each codebase.
+        </p>
+      </div>
+      <div class="border-2 border-border p-4 min-w-0">
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted">layer 2</div>
+        <div class="font-bold text-lg mb-2">topic notes</div>
+        <p class="text-sm text-muted">
+          <code class="break-all">guides/&lt;repo&gt;/topics/&lt;slug&gt;.md</code>. Per-subsystem deep dives.
+          <strong>Revised in place</strong> when code contradicts them — this is the
+          load-bearing mechanic.
+        </p>
+      </div>
+      <div class="border-2 border-border p-4 min-w-0">
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted">layer 3</div>
+        <div class="font-bold text-lg mb-2">episodes</div>
+        <p class="text-sm text-muted">
+          <code class="break-all">episodes/YYYY-MM/&lt;slug&gt;.md</code>. Per-session insights, 200-600
+          words each. Append-only; mark superseded when distilled into a topic.
+        </p>
+      </div>
+    </div>
+    <p class="text-sm text-muted mt-4 max-w-3xl">
+      Flow upward: <strong>episodes → topic notes → bedrock</strong>. Each layer up
+      is more distilled, more authoritative, more durable. Plus four supporting
+      layers — <code>designs/</code> (per-feature design docs), <code>research/</code>
+      (external comparisons), <code>papers/</code> (digested external work), and
+      <code>learn/</code> (ramp-ups + walkthroughs + drafts).
+    </p>
+  </Card>
+
+  <Card eyebrow="02 / chassis" title="The automation chassis (what fires by itself)">
+    <p class="text-sm text-muted mb-4 max-w-3xl">
+      Cartograph compounds because the chassis runs unattended. Five hooks
+      fire at specific moments in every Claude Code session under
+      <code><cartograph-root>/</code>:
+    </p>
+    <ul class="space-y-3 max-w-3xl">
+      <li class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-mono text-xs font-bold mb-1">SessionStart</div>
+        <p class="text-sm text-muted">
+          Fetches upstream, opens drift reports if bedrock fell behind, rebuilds
+          the file-reverse-index + BM25 index, writes today's diary entry,
+          auto-promotes any tag with ≥3 undistilled episodes into a topic note.
+        </p>
+      </li>
+      <li class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-mono text-xs font-bold mb-1">UserPromptSubmit</div>
+        <p class="text-sm text-muted">
+          On every turn: injects bedrock + topic notes + episodes ranked by
+          keyword overlap, plus BM25 semantic rerank, plus the file-reverse
+          lookup if the prompt contains any path-shaped token, plus a one-line
+          reminder of available tools. The agent receives orientation before
+          generating.
+        </p>
+      </li>
+      <li class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-mono text-xs font-bold mb-1">PreToolUse:Read</div>
+        <p class="text-sm text-muted">
+          When the agent is about to <code>Read</code> a workspace file, looks
+          up the path in the reverse index and inserts every matching note as
+          context. The orientation question — "what do we know about this file?"
+          — is answered automatically.
+        </p>
+      </li>
+      <li class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-mono text-xs font-bold mb-1">Stop</div>
+        <p class="text-sm text-muted">
+          Auto-drafts an episode if the session touched ≥3 files but wrote
+          none. Audits chassis utilization. Commits + pushes any content the
+          session wrote.
+        </p>
+      </li>
+      <li class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-mono text-xs font-bold mb-1">PostToolUse:Edit/Write</div>
+        <p class="text-sm text-muted">
+          Scans the diff for identity tokens (Cartograph / Claude / Anthropic)
+          that must never reach upstream PRs. Appends to the session log.
+        </p>
+      </li>
+    </ul>
+  </Card>
+
+  <Card eyebrow="02b / auto-promotion" title="The two cascades that make the layers compound">
+    <p class="text-sm text-muted mb-4 max-w-3xl">
+      <code>scripts/auto-promote.sh</code> runs in the background from
+      <code>SessionStart</code> (155 lines, bash 3.2-compatible — macOS default).
+      Two cascades, both <em>default-approve</em>: eligible work fires automatically;
+      the human <em>rejects</em> to halt, doesn't <em>approve</em> to start.
+      Opt-out entirely with <code>CARTOGRAPH_AUTO_PROMOTE=0</code>.
+    </p>
+
+    <div class="grid md:grid-cols-2 gap-4 max-w-5xl">
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Cascade 1 — episode → topic</div>
+        <p class="text-sm text-muted mb-3">
+          Scans every <code>episodes/YYYY-MM/*.md</code>. Groups by
+          <code>(repo, tag)</code>. Any tag with ≥<code>N</code> qualifying
+          episodes (<code>N = CARTOGRAPH_AUTO_PROMOTE_EPISODES</code>, default
+          <code>3</code>) becomes a candidate.
+        </p>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">An episode is eligible if</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
+          <li><code>distilled_into:</code> is unset (null / <code>~</code>)</li>
+          <li><code>rejected: true</code> is NOT set</li>
+          <li>has a <code>repo:</code> field</li>
+          <li>has at least one tag (inline <code>tags: [a, b]</code> or block <code>- a</code> form)</li>
+        </ul>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">An episode contributes to <em>every</em> tag it carries</div>
+        <p class="text-sm text-muted">
+          An episode tagged <code>tags: [orbax, jax]</code> counts toward both
+          buckets. If <code>orbax</code> hits 3 first, that fires; <code>jax</code>
+          might or might not depending on how many other <code>jax</code>-tagged
+          episodes share the bucket.
+        </p>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">When it fires</div>
+        <p class="text-sm text-muted">
+          <code>nohup bash scripts/promote-tag.sh &lt;tag&gt; &amp;</code> — drafts
+          <code>guides/&lt;repo&gt;/topics/&lt;tag&gt;.md</code> with
+          <code>auto_promoted: true</code>, then stamps
+          <code>distilled_into: guides/&lt;repo&gt;/topics/&lt;tag&gt;.md</code>
+          on each source episode (which is how the audit knows not to re-promote
+          on the next run).
+        </p>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Skipped if</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
+          <li>topic file already exists AND ≥<code>count - 1</code> of the source episodes are already distilled into it (idempotency check)</li>
+          <li>a stale lock file exists at <code>.auto-promote-locks/episode-to-topic-&lt;repo&gt;-&lt;tag&gt;.lock</code> (auto-reaped at &gt;1h)</li>
+          <li><code>max_per_run</code> already promoted this run (default 2 — see <code>CARTOGRAPH_AUTO_PROMOTE_MAX_PER_RUN</code>)</li>
+        </ul>
+      </div>
+
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Cascade 2 — topic → bedrock</div>
+        <p class="text-sm text-muted mb-3">
+          Scans every <code>guides/&lt;repo&gt;/topics/*.md</code>. For each, fires
+          <code>scripts/fold-topic-to-bedrock.sh &lt;repo&gt; &lt;name&gt;</code> —
+          claude rewrites the relevant section of
+          <code>overview.md</code> / <code>architecture.md</code> /
+          <code>conventions.md</code> with the topic's content, then stamps
+          <code>folded_into_bedrock:</code> on the topic.
+        </p>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">A topic is eligible if</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
+          <li><code>folded_into_bedrock:</code> is unset (null / <code>~</code>)</li>
+          <li><code>rejected: true</code> is NOT set</li>
+        </ul>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Default-approve, not opt-in</div>
+        <p class="text-sm text-muted">
+          An earlier version of this required <code>reviewed_by_human:</code>
+          before folding. That made bedrock fold opt-IN, which contradicts the
+          cartograph-compounds-automatically property. Now: drafted topic →
+          fold cascade fires next SessionStart unless you reject it. You
+          actively <em>stop</em> the cascade; you don't <em>start</em> it.
+        </p>
+        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Skipped if</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
+          <li>lock file exists at <code>.auto-promote-locks/topic-to-bedrock-&lt;repo&gt;-&lt;name&gt;.lock</code></li>
+          <li><code>max_per_run</code> reached</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-6 max-w-3xl">
+      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Worked example</div>
+      <p class="text-sm text-muted mb-2">Say you finish three orbax sessions this week. Each writes an episode:</p>
+      <ul class="font-mono text-xs text-muted list-none space-y-1 mb-3 pl-3 border-l-2 border-[var(--border-soft)]">
+        <li>episodes/2026-05/2026-05-25-153140-cartograph.md · repo: orbax · tags: [orbax, layout-classes]</li>
+        <li>episodes/2026-05/2026-05-25-153330-cartograph.md · repo: orbax · tags: [orbax, partial-load]</li>
+        <li>episodes/2026-05/2026-05-25-173127-cartograph.md · repo: orbax · tags: [orbax, drift-resolution]</li>
+      </ul>
+      <p class="text-sm text-muted mb-2">
+        Three episodes share the tag <code>orbax</code>. Each unique secondary tag
+        (<code>layout-classes</code>, <code>partial-load</code>, <code>drift-resolution</code>)
+        has count=1 — below threshold.
+      </p>
+      <ul class="text-sm text-muted list-disc pl-5 space-y-1 mb-3">
+        <li><strong>Next SessionStart:</strong> <code>auto-promote.sh</code> finds the <code>(orbax, orbax)</code> bucket at count 3 → fires <code>promote-tag.sh orbax</code> in background.</li>
+        <li><strong>~30–90s later:</strong> <code>guides/orbax/topics/orbax.md</code> exists with <code>auto_promoted: true</code>. Each source episode has <code>distilled_into: guides/orbax/topics/orbax.md</code>.</li>
+        <li><strong>Same SessionStart:</strong> the new topic file isn't seen by Cascade 2 yet (scan happened before the file existed) — fold waits one cycle.</li>
+        <li><strong>Following SessionStart:</strong> Cascade 2 finds the new topic, fires <code>fold-topic-to-bedrock.sh orbax orbax</code> → claude weaves the topic's content into <code>guides/orbax/overview.md</code>, stamps <code>folded_into_bedrock: guides/orbax/overview.md</code> on the topic.</li>
+        <li><strong>To halt at any point:</strong> set <code>rejected: true</code> on the episode (blocks promotion), or on the topic (blocks fold), or on the auto-drafted topic (blocks fold + flags for cleanup).</li>
+      </ul>
+    </div>
+
+    <div class="mt-6 max-w-3xl">
+      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Manual overrides</div>
+      <ul class="text-sm text-muted list-disc pl-5 space-y-1">
+        <li><a href="/promotions/" class="text-accent hover:underline">/promotions/</a> — the activity log + pending candidates. Manual <em>Promote → topic</em> button on each candidate row for cases where the auto-hook didn't fire (workspace-fork session, stuck lock, you crossed ≥3 mid-session and don't want to wait).</li>
+        <li><code>/promote &lt;tag&gt;</code> slash — explicit one-off from within a Claude Code session.</li>
+        <li>Edit <code>CARTOGRAPH_AUTO_PROMOTE_EPISODES</code> in your shell env to raise/lower the threshold per-session.</li>
+        <li><code>CARTOGRAPH_AUTO_PROMOTE=0</code> opts out of both cascades for that session.</li>
+      </ul>
+    </div>
+
+    <div class="mt-6 max-w-3xl">
+      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Why default-approve</div>
+      <p class="text-sm text-muted">
+        The whole point of cartograph is that understanding compounds without
+        being asked. If promotion required explicit approval, every session
+        would carry a manual review tax — and most sessions you just want to
+        keep working. Default-approve flips the polarity: claude does the
+        drafting; the human only intervenes when the draft is wrong. Reject
+        is cheap (one frontmatter field), so the asymmetry is fine.
+      </p>
+    </div>
+  </Card>
+
+  <Card eyebrow="03 / surfaces for humans" title="The local UI you're using right now">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl">
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/" class="font-bold text-accent hover:underline">Home <code class="text-xs">/</code></a>
+        <p class="text-sm text-muted mt-1">Live queue, file-index lookup, repo status, pinned notes, upstream activity. The first place you land.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/prs/" class="font-bold text-accent hover:underline">PRs <code class="text-xs">/prs/</code></a>
+        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the five tracked upstreams. State, mergeable, review decision, age.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/repo/" class="font-bold text-accent hover:underline">Repos <code class="text-xs">/repo/</code></a>
+        <p class="text-sm text-muted mt-1">Pick a fork to dive into. Each repo has its own page with bedrock, topics, designs, research, papers, learn, episodes, drift, and stack.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/repo/orbax/stack/" class="font-bold text-accent hover:underline">Stack tracker <code class="text-xs">/repo/&lt;r&gt;/stack/</code></a>
+        <p class="text-sm text-muted mt-1">Live tree of every local branch with PR state and cascade hints. Backed by ancestry walks; git-spice integration if installed.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/episodes/" class="font-bold text-accent hover:underline">Episodes <code class="text-xs">/episodes/</code></a>
+        <p class="text-sm text-muted mt-1">Chronological timeline of every per-session insight. Filter by repo and tag.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/library/" class="font-bold text-accent hover:underline">Library <code class="text-xs">/library/</code></a>
+        <p class="text-sm text-muted mt-1">Faceted index over designs, papers, research, walkthroughs, drafts, ramp-ups. Filter by type + repo.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/seams/" class="font-bold text-accent hover:underline">Seams <code class="text-xs">/seams/</code></a>
+        <p class="text-sm text-muted mt-1">Every cross-repo edge — jax↔xla, jax↔orbax, jax↔tunix — with the file paths and concepts that cross.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/console/" class="font-bold text-accent hover:underline">Console <code class="text-xs">/console/</code></a>
+        <p class="text-sm text-muted mt-1">Review queue, drift reports, promotion candidates, lint debt, diary. The "what is the chassis asking me to do?" surface.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/console/review/" class="font-bold text-accent hover:underline">Review everything <code class="text-xs">/console/review/</code></a>
+        <p class="text-sm text-muted mt-1">Unified bulk surface — bless (auto-drafted episodes + unblessed topics), anchor gaps, per-topic drift. Filter by type, one button, claude acts per item.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <div class="font-bold">⌘K palette</div>
+        <p class="text-sm text-muted mt-1">Press ⌘K anywhere. Global BM25 search + navigation commands. The single fastest way to get anywhere.</p>
+      </div>
+    </div>
+  </Card>
+
+  <Card eyebrow="04 / slash commands for claude" title="What the agent can call">
+    <p class="text-sm text-muted mb-4 max-w-3xl">
+      Slash commands wrap the chassis scripts so the agent doesn't need to
+      remember bash invocations. The chassis surfaces them in every turn's
+      injection reminder.
+    </p>
+    <table class="w-full font-mono text-xs border-2 border-border">
+      <thead class="bg-[var(--surface-1)] border-b-2 border-border">
+        <tr>
+          <th class="text-left px-3 py-2 w-48">slash</th>
+          <th class="text-left px-3 py-2">when to call</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/whatknows &lt;path&gt;</td><td class="px-3 py-2 text-muted">Before opening any code file — answers "what do we already know about this?"</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/cite &lt;symbol&gt;</td><td class="px-3 py-2 text-muted">Mid-task: a symbol shows up, grep all layers for it</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/find &lt;natural-q&gt;</td><td class="px-3 py-2 text-muted">BM25 retrieval when prompt wording differs from note titles</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/queue</td><td class="px-3 py-2 text-muted">"What is the chassis asking me to review?"</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/revise &lt;topic&gt;</td><td class="px-3 py-2 text-muted">Topic note disagrees with code you just read — pre-stages diffs</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/promote &lt;tag&gt;</td><td class="px-3 py-2 text-muted">≥3 episodes share a tag — distill into a topic note</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/episode &lt;title&gt;</td><td class="px-3 py-2 text-muted">Manual episode (preempts the auto-draft)</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/seam &lt;a&gt; &lt;b&gt;</td><td class="px-3 py-2 text-muted">Record a cross-repo edge</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/orient</td><td class="px-3 py-2 text-muted">Force re-inject for current cwd</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/freshness</td><td class="px-3 py-2 text-muted">Per-repo fetch age + drift status</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/stack</td><td class="px-3 py-2 text-muted">Show the branch stack tree (uses git-spice if installed)</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/stack-new &lt;slug&gt;</td><td class="px-3 py-2 text-muted">Start a new branch on top of HEAD with parent tracking</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/stack-pr</td><td class="px-3 py-2 text-muted">Push current branch + open/update its PR</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/stack-submit</td><td class="px-3 py-2 text-muted">Push every branch in the stack + open/update each PR</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/stack-restack</td><td class="px-3 py-2 text-muted">Cascade-rebase descendants after a parent moved</td></tr>
+        <tr class="bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/stack-sync</td><td class="px-3 py-2 text-muted">Pull main + cascade-rebase whole stack (post-merge recovery)</td></tr>
+      </tbody>
+    </table>
+  </Card>
+
+  <Card eyebrow="05 / MCP tools" title="What the agent can call mid-loop (without a slash)">
+    <p class="text-sm text-muted mb-3 max-w-3xl">
+      Slashes are one-shot. MCP tools are callable inside any turn — the
+      cartograph MCP server exposes three augmenting tools (no wrapping of
+      <code>Read</code> / <code>Grep</code>):
+    </p>
+    <ul class="space-y-2 max-w-3xl text-sm">
+      <li><code class="text-accent">cartograph_search(query, repo?, layer?, k=10)</code> — BM25 ranked retrieval. Call before grepping.</li>
+      <li><code class="text-accent">cartograph_notes_for_file(path)</code> — reverse index. Call before <code>Read</code> of any workspace file.</li>
+      <li><code class="text-accent">cartograph_drift(repo, anchor?)</code> — drift state. Call before trusting any topic note.</li>
+    </ul>
+    <p class="text-sm text-muted mt-3 max-w-3xl">
+      Enable per-project by creating <code>.mcp.json</code> at the cartograph
+      root with the server entry — see
+      <code>claude-designs/cartograph/mcp-surface/</code>. The classifier blocks
+      the agent from authoring this file itself; opt-in is by the human.
+    </p>
+  </Card>
+
+  <Card eyebrow="06 / example scenarios" title="How Claude agents actually use this">
+    <div class="space-y-6 max-w-3xl">
+      <div>
+        <div class="font-bold mb-1">Scenario A — "Why is my checkpoint save hanging on multi-host?"</div>
+        <p class="text-sm text-muted">
+          User opens Claude in <code>workspace/orbax/</code>. The
+          <code>UserPromptSubmit</code> hook fires: bedrock + topics injected;
+          BM25 surfaces <code>guides/orbax/topics/multi-host-coordination.md</code>
+          and <code>guides/orbax/topics/async-checkpoint-flow.md</code> (scores
+          13.5 / 8.6); path-token lookup finds <code>async_checkpointer.py</code>
+          notes. Agent reads the topic notes <em>before</em> opening upstream
+          code. If a claim contradicts what the code now shows, <code>/revise
+          async-checkpoint-flow</code> pre-stages diffs and the agent revises
+          the topic in place. Stop hook auto-drafts an episode if anything new
+          was learned.
+        </p>
+      </div>
+
+      <div>
+        <div class="font-bold mb-1">Scenario B — Stacked PR cascade after #1 merges</div>
+        <p class="text-sm text-muted">
+          The user is on stack <code>bench-1 → bench-2 → ... → bench-7</code>.
+          PR #1 just merged. Agent calls <code>/stack-sync</code>:
+          git-spice pulls main, deletes the merged <code>bench-1</code>
+          locally, then cascade-rebases <code>bench-2..7</code> onto the new
+          main. Conflicts surface inline — agent resolves them with normal
+          <code>git add</code> + <code>git rebase --continue</code> and re-runs.
+          Then <code>/stack-submit</code> force-pushes every updated branch
+          with <code>--force-with-lease</code>. Throughout, the
+          <a href="/prs/" class="text-accent hover:underline">/prs/</a> page
+          shows live status across all five upstreams.
+        </p>
+      </div>
+
+      <div>
+        <div class="font-bold mb-1">Scenario C — Random Friday: "what's been happening?"</div>
+        <p class="text-sm text-muted">
+          User opens cartograph cold. Home shows: 3 auto-drafted episodes
+          awaiting review (the chassis caught them at session-end), 1 per-repo
+          drift report opened on jax (4 commits ahead), 2 topic-level drifts
+          on orbax (cited code refactored). User clicks
+          <a href="/console/review/" class="text-accent hover:underline">/console/review/</a>
+          to triage the auto-drafted episodes — bless the good ones, reject
+          the noisy one with a note (which triggers
+          <code>revise-rejected.sh</code> to refine it). Then to
+          <a href="/diary/" class="text-accent hover:underline">/diary/</a>
+          to read what the chassis did while they were away.
+        </p>
+      </div>
+
+      <div>
+        <div class="font-bold mb-1">Scenario D — Reading a paper that informs a design</div>
+        <p class="text-sm text-muted">
+          Agent in <code>workspace/orbax/</code> consults a safetensors paper
+          via WebFetch. Stop hook detects the external lookup and auto-drafts a
+          <code>papers/orbax/&lt;slug&gt;/notes.md</code>. The note lands with
+          <code>auto_drafted: true</code> and shows up on
+          <a href="/console/review/" class="text-accent hover:underline">Review</a>
+          alongside auto-drafted episodes. User reviews, blesses, and the paper
+          becomes part of the corpus — searchable via BM25, discoverable via
+          Library facets.
+        </p>
+      </div>
+    </div>
+  </Card>
+
+  <Card eyebrow="07 / discipline" title="The one rule that makes it compound">
+    <p class="text-sm text-muted max-w-3xl mb-3">
+      Cartograph gets <em>better</em> over time (not just <em>bigger</em>) because
+      of one rule:
+    </p>
+    <blockquote class="border-l-4 border-[var(--accent)] pl-4 italic text-fg max-w-3xl">
+      When a topic note disagrees with the code you just read, <strong>revise it
+      in place</strong>. Bump <code>last_revised</code>. Write a short episode
+      recording what changed and why.
+    </blockquote>
+    <p class="text-sm text-muted max-w-3xl mt-3">
+      Don't fork a new file with a similar slug. Don't add a "## YYYY-MM-DD
+      update" if the original is now wrong. Edit the source. Bedrock is three
+      files per repo, ever. Topic notes are one slug per topic. Revision &gt;
+      accumulation — every other rule is downstream of this one.
+    </p>
+  </Card>
+
+  <Card eyebrow="08 / for new contributors" title="Where to start reading">
+    <ul class="space-y-2 max-w-3xl text-sm">
+      <li>The design rationale: <code>plan.md</code> in the repo root.</li>
+      <li>The operational rules: <code>CLAUDE.md</code> in the repo root (loaded by every Claude Code session).</li>
+      <li>The discipline doctrine: <code>docs/revision-discipline.md</code>.</li>
+      <li>The chassis design index: <a href="/library/?type=design" class="text-accent hover:underline">/library/?type=design</a>.</li>
+      <li>Three rapid scans: <a href="/" class="text-accent hover:underline">Home</a>, <a href="/repo/" class="text-accent hover:underline">Repos</a>, <a href="/console/" class="text-accent hover:underline">Console</a>.</li>
+    </ul>
+  </Card>
+</Base>

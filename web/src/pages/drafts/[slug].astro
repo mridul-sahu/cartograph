@@ -1,0 +1,101 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import ContentActions from '~/components/islands/ContentActions.tsx';
+import BookmarkButton from '~/components/islands/BookmarkButton.tsx';
+import RelatedNotes from '~/components/islands/RelatedNotes.tsx';
+import Backlinks from '~/components/islands/Backlinks.tsx';
+import { loadAllDrafts } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+export function getStaticPaths() {
+  return loadAllDrafts().map((d) => ({ params: { slug: d.slug } }));
+}
+
+const { slug } = Astro.params as { slug: string };
+const all = loadAllDrafts().sort((a, b) => a.slug.localeCompare(b.slug));
+const doc = all.find((d) => d.slug === slug);
+if (!doc) {
+  return Astro.redirect('/drafts/');
+}
+
+function stripFirstH1(md: string): string {
+  return md.replace(/^#\s+.+?\r?\n+/, '');
+}
+function extractTitle(body: string, fallback: string): string {
+  const m = body.match(/^#\s+(.+?)\s*$/m);
+  if (!m) return fallback;
+  return m[1].replace(/`/g, '');
+}
+
+const title = extractTitle(doc.body, slug);
+const { html } = await renderMarkdown(stripFirstH1(doc.body));
+
+const status = typeof doc.data.status === 'string' ? doc.data.status : 'unknown';
+const repo = typeof doc.data.repo === 'string' ? doc.data.repo : null;
+const topic = typeof doc.data.topic === 'string' ? doc.data.topic : null;
+const lr = doc.data.last_revised ? formatDate(String(doc.data.last_revised)) : null;
+
+function statusTone(s: string): 'ok' | 'warn' | 'danger' | 'accent' {
+  const v = s.toLowerCase();
+  if (v.startsWith('full')) return 'ok';
+  if (v.includes('partial')) return 'accent';
+  if (v.includes('outline')) return 'warn';
+  return 'danger';
+}
+---
+
+<Base
+  title={`${slug} · draft`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'drafts', href: '/drafts/' },
+    { label: slug },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-10 max-w-6xl mx-auto">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <Chip tone="accent">draft</Chip>
+          <Chip tone={statusTone(status)}>{status}</Chip>
+          {repo && <Chip>{repo}</Chip>}
+          {topic && <Chip>topic: {topic}</Chip>}
+          {lr && <Chip>revised · {lr}</Chip>}
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tightish leading-[1.1]">{title}</h1>
+        <p class="mt-3 font-mono text-xs text-muted">
+          {doc.wordCount.toLocaleString()} words · not for publication
+        </p>
+      </header>
+
+      <div class="prose-cartograph" set:html={html} />
+    </article>
+
+    <aside class="lg:sticky lg:top-32 self-start space-y-6 text-sm">
+      <ContentActions
+        kind="draft"
+        repo={repo ?? undefined}
+        slug={slug}
+        filePath={`learn/drafts/${slug}.md`}
+        client:load
+      />
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">pin</h3>
+        <BookmarkButton path={`learn/drafts/${slug}.md`} title={slug} client:load />
+      </div>
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">related</h3>
+        <RelatedNotes path={`learn/drafts/${slug}.md`} client:visible />
+      </div>
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">backlinks</h3>
+        <Backlinks path={`learn/drafts/${slug}.md`} client:visible />
+      </div>
+    </aside>
+  </div>
+
+  <MermaidRehydrator client:visible />
+</Base>

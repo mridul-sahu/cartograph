@@ -1,0 +1,45 @@
+---
+import Base from '~/layouts/Base.astro';
+import IdeShell from '~/components/islands/IdeShell.tsx';
+import { REPOS } from '~/lib/repos';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+
+export function getStaticPaths() {
+  return REPOS.map((repo) => ({ params: { repo } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+
+// Absolute workspace path — code-server's ?folder= param needs an OS path.
+// Astro build runs from web/, so go up one and into workspace/. This is
+// baked into the static HTML at build time; it's the dev box absolute
+// path. If someone else runs this stack on a different machine, the path
+// changes.
+const workspacePath = join(process.cwd(), '..', 'workspace', repo);
+const codeServerOrigin = 'http://localhost:47780';
+
+// If the repo has a setup, hand the IDE the multi-root .code-workspace so
+// /browse/<repo> shows the fork AND setups/<repo>/ side by side.
+const setupWorkspaceFile = join(
+  process.cwd(),
+  '..',
+  'setups',
+  repo,
+  'ide.code-workspace',
+);
+const setupWorkspace = existsSync(setupWorkspaceFile) ? setupWorkspaceFile : null;
+---
+
+<Base
+  title={`browse · ${repo}`}
+  fullWidth={true}
+>
+  <IdeShell
+    repo={repo}
+    workspacePath={workspacePath}
+    codeServerOrigin={codeServerOrigin}
+    setupWorkspace={setupWorkspace}
+    client:load
+  />
+</Base>

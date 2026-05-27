@@ -1,0 +1,61 @@
+---
+// Card.astro — the single card surface used across every page.
+//
+// Replaces the prior mix of `section-block`, bare `brutal-card`, and
+// ad-hoc `<div class="border-2 ...">` blocks. Every visible content
+// unit on every page uses this.
+//
+// Slots:
+//   default — body content
+//   header  — optional override for the entire header bar; if absent,
+//             we compose from `eyebrow` / `title` / `right` props.
+//
+// Props:
+//   eyebrow  — "01 / queue" style uppercase tracking-widest label
+//   title    — main heading (rendered as h3)
+//   right    — small monospace text in the upper-right (counts, ages)
+//   variant  — 'primary' (with shadow) | 'plain' (no shadow); default primary
+//   padded   — boolean; default true. Disable to wrap dense lists or tables.
+//   id       — anchor for in-page navigation
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  right?: string;
+  variant?: 'primary' | 'plain';
+  padded?: boolean;
+  id?: string;
+}
+
+const { eyebrow, title, right, variant = 'primary', padded = true, id } = Astro.props;
+const wrapClass = variant === 'plain'
+  ? 'border-2 border-border bg-bg'
+  : 'brutal-card bg-bg';
+const bodyClass = padded ? 'p-5' : '';
+---
+
+<section id={id} class={wrapClass + ' mb-6'}>
+  {(eyebrow || title || right || Astro.slots.has('header')) && (
+    <header class="flex items-end justify-between gap-3 border-b-2 border-border px-5 py-3">
+      {Astro.slots.has('header') ? (
+        <slot name="header" />
+      ) : (
+        <div class="min-w-0 flex-1">
+          {eyebrow && (
+            <div class="font-mono text-[10px] uppercase tracking-widest text-muted leading-none mb-1">
+              {eyebrow}
+            </div>
+          )}
+          {title && (
+            <h3 class="text-xl font-bold tracking-tight leading-tight truncate">{title}</h3>
+          )}
+        </div>
+      )}
+      {right && (
+        <div class="font-mono text-xs text-muted whitespace-nowrap flex-shrink-0">{right}</div>
+      )}
+    </header>
+  )}
+  <div class={bodyClass}>
+    <slot />
+  </div>
+</section>

@@ -1,0 +1,133 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import ContentActions from '~/components/islands/ContentActions.tsx';
+import { REPOS } from '~/lib/repos';
+import { loadBedrock } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+const LAYERS = ['overview', 'architecture', 'conventions'] as const;
+type Layer = (typeof LAYERS)[number];
+
+export function getStaticPaths() {
+  const LAYERS_LOCAL = ['overview', 'architecture', 'conventions'];
+  return REPOS.flatMap((repo) =>
+    LAYERS_LOCAL.map((layer) => ({ params: { repo, layer } }))
+  );
+}
+
+const { repo, layer } = Astro.params as { repo: string; layer: Layer };
+
+if (!REPOS.includes(repo) || !LAYERS.includes(layer)) {
+  return Astro.redirect(`/repo/${repo}/`);
+}
+
+const bedrock = loadBedrock(repo);
+const doc = bedrock[layer];
+
+if (!doc) {
+  return Astro.redirect(`/repo/${repo}/`);
+}
+
+const { html, headings } = await renderMarkdown(doc.body);
+
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+// Prev / next across the three layers.
+const idx = LAYERS.indexOf(layer);
+const prev = idx > 0 ? LAYERS[idx - 1] : null;
+const next = idx < LAYERS.length - 1 ? LAYERS[idx + 1] : null;
+---
+
+<Base
+  title={`${layer} · ${repo}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: repo, href: `/repo/${repo}/` },
+    { label: 'bedrock' },
+    { label: layer },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2 flex items-center gap-3">
+          <span>{repo}</span>
+          <span class="text-border">·</span>
+          <span>bedrock</span>
+          <Chip tone="ok">durable</Chip>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-bold tracking-tightish font-mono">{layer}</h1>
+        {doc.data.last_revised && (
+          <p class="mt-2 font-mono text-xs text-muted">last revised {formatDate(doc.data.last_revised as string)}</p>
+        )}
+      </header>
+      <div class="prose-cartograph" set:html={html} />
+
+      <nav class="mt-16 grid grid-cols-2 gap-4 border-t-2 border-border pt-6">
+        {prev ? (
+          <a href={`/repo/${repo}/bedrock/${prev}/`} class="brutal-card p-4 no-underline">
+            <div class="font-mono text-xs text-muted uppercase tracking-widest">← prev</div>
+            <div class="font-mono mt-1">{prev}</div>
+          </a>
+        ) : <span />}
+        {next ? (
+          <a href={`/repo/${repo}/bedrock/${next}/`} class="brutal-card p-4 text-right no-underline">
+            <div class="font-mono text-xs text-muted uppercase tracking-widest">next →</div>
+            <div class="font-mono mt-1">{next}</div>
+          </a>
+        ) : <span />}
+      </nav>
+    </article>
+
+    <aside class="lg:sticky lg:top-24 self-start space-y-6 text-sm">
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">frontmatter</h3>
+        <dl class="grid grid-cols-[8rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">repo</dt><dd>{repo}</dd>
+          <dt class="text-muted">layer</dt><dd>bedrock</dd>
+          <dt class="text-muted">kind</dt><dd>{layer}</dd>
+          {doc.data.last_revised && (<><dt class="text-muted">revised</dt><dd>{formatDate(doc.data.last_revised as string)}</dd></>)}
+          {doc.data.backfilled_from_sha && (<><dt class="text-muted">sha</dt><dd><code>{String(doc.data.backfilled_from_sha)}</code></dd></>)}
+          <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
+        </dl>
+      </div>
+
+      {tocHeadings.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">on this page</h3>
+          <ul class="space-y-1.5 text-sm">
+            {tocHeadings.map((h) => (
+              <li class={h.depth === 3 ? 'pl-3 text-muted' : ''}>
+                <a href={`#${h.id}`} class="hover:text-accent">{h.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">other bedrock</h3>
+        <ul class="space-y-1.5 font-mono text-xs">
+          {LAYERS.filter((l) => l !== layer).map((l) => (
+            <li>
+              <a href={`/repo/${repo}/bedrock/${l}/`} class="hover:text-accent">{l}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <ContentActions
+        kind="bedrock"
+        repo={repo}
+        layer={layer}
+        filePath={`guides/${repo}/${layer}.md`}
+        client:load
+      />
+    </aside>
+  </div>
+
+  <MermaidRehydrator client:visible />
+</Base>

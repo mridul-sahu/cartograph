@@ -1,0 +1,201 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Library — one faceted index covering designs, papers, research, walkthroughs,
+// drafts, ramp-ups. Replaces five separate index pages.
+
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
+type Kind = 'design' | 'paper' | 'research' | 'walkthrough' | 'draft' | 'ramp-up';
+
+interface Entry {
+  kind: Kind;
+  repo?: string;
+  slug: string;
+  title: string;
+  href: string;
+  date?: string;
+  lead?: string;
+}
+
+function readFrontmatter(text: string): Record<string, any> {
+  const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!m) return {};
+  const fm: Record<string, any> = {};
+  for (const line of m[1].split('\n')) {
+    const km = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
+    if (!km) continue;
+    fm[km[1]] = km[2].replace(/^["']|["']$/g, '').trim();
+  }
+  return fm;
+}
+
+function readH1(text: string): string | null {
+  const m = text.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '').match(/^#\s+(.+)$/m);
+  return m ? m[1].trim() : null;
+}
+
+function readLeadParagraph(text: string): string {
+  const body = text.replace(/^---[\s\S]*?---\s*/m, '');
+  const para = body
+    .split(/\n\s*\n/)
+    .map((p) => p.trim().replace(/^#+\s+.*$/gm, '').replace(/\n/g, ' ').trim())
+    .find((p) => p.length > 60 && !p.startsWith('---'));
+  if (!para) return '';
+  const cleaned = para.replace(/`/g, '').replace(/\s+/g, ' ').slice(0, 200);
+  return cleaned + (cleaned.length === 200 ? '…' : '');
+}
+
+function walkRepoDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
+  const out: Entry[] = [];
+  if (!existsSync(baseDir)) return out;
+  for (const repo of readdirSync(baseDir)) {
+    const repoDir = join(baseDir, repo);
+    if (!statSync(repoDir).isDirectory()) continue;
+    for (const entry of readdirSync(repoDir)) {
+      const slug = entry.replace(/\.md$/, '');
+      const file = entry.endsWith('.md') ? join(repoDir, entry) : join(repoDir, entry, 'README.md');
+      if (!existsSync(file)) continue;
+      const text = readFileSync(file, 'utf8');
+      const fm = readFrontmatter(text);
+      const title = readH1(text) || slug;
+      out.push({
+        kind,
+        repo,
+        slug,
+        title,
+        href: `/${hrefPrefix}/${repo}/${slug}/`,
+        date: fm.last_revised || fm.date,
+        lead: readLeadParagraph(text),
+      });
+    }
+  }
+  return out;
+}
+
+function walkFlatDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
+  const out: Entry[] = [];
+  if (!existsSync(baseDir)) return out;
+  for (const entry of readdirSync(baseDir)) {
+    if (!entry.endsWith('.md') || entry === 'README.md') continue;
+    const file = join(baseDir, entry);
+    const text = readFileSync(file, 'utf8');
+    const fm = readFrontmatter(text);
+    const slug = entry.replace(/\.md$/, '');
+    const title = readH1(text) || slug;
+    out.push({
+      kind,
+      slug,
+      title,
+      href: `/${hrefPrefix}/${slug}/`,
+      date: fm.last_revised || fm.date,
+      lead: readLeadParagraph(text),
+    });
+  }
+  return out;
+}
+
+const entries: Entry[] = [
+  ...walkRepoDir('design',   join(ROOT, 'designs'),       'designs'),
+  ...walkRepoDir('paper',    join(ROOT, 'papers'),        'papers'),
+  ...walkRepoDir('research', join(ROOT, 'research'),      'research'),
+  ...walkFlatDir('walkthrough', join(ROOT, 'learn/walkthroughs'), 'walkthroughs'),
+  ...walkFlatDir('draft',       join(ROOT, 'learn/drafts'),       'drafts'),
+];
+
+// Add ramp-up files (one per repo) as a separate kind.
+const rampupDir = join(ROOT, 'learn/ramp-up');
+if (existsSync(rampupDir)) {
+  for (const entry of readdirSync(rampupDir)) {
+    if (!entry.endsWith('.md') || entry === 'README.md') continue;
+    const file = join(rampupDir, entry);
+    const text = readFileSync(file, 'utf8');
+    const fm = readFrontmatter(text);
+    const repo = entry.replace(/\.md$/, '');
+    entries.push({
+      kind: 'ramp-up',
+      repo,
+      slug: repo,
+      title: readH1(text) || `${repo} ramp-up`,
+      href: `/ramp-up/${repo}/`,
+      date: fm.last_revised || fm.date,
+    });
+  }
+}
+
+entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+const url = new URL(Astro.request.url);
+const filterKind = url.searchParams.get('type');
+const filterRepo = url.searchParams.get('repo');
+const filtered = entries.filter((e) => {
+  if (filterKind && e.kind !== filterKind) return false;
+  if (filterRepo && e.repo !== filterRepo) return false;
+  return true;
+});
+
+const allKinds: Kind[] = ['design', 'paper', 'research', 'walkthrough', 'draft', 'ramp-up'];
+const allRepos = Array.from(new Set(entries.map((e) => e.repo).filter(Boolean))).sort() as string[];
+---
+
+<Base title="library" breadcrumbs={[{ label: 'library' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Library</h1>
+    <p class="mt-2 text-muted text-base max-w-2xl">
+      Designs, papers, research notes, walkthroughs, drafts, and ramp-ups. One
+      faceted index — narrow with the chips below.
+    </p>
+  </section>
+
+  <Card variant="plain" padded={true}>
+    <div class="flex flex-wrap gap-2 mb-2">
+      <span class="font-mono text-[10px] uppercase tracking-widest text-muted mr-1 mt-1">type</span>
+      <a href="/library/" class={!filterKind ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}>all</a>
+      {allKinds.map((k) => (
+        <a
+          href={`/library/?type=${k}${filterRepo ? `&repo=${filterRepo}` : ''}`}
+          class={filterKind === k ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}
+        >{k}</a>
+      ))}
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <span class="font-mono text-[10px] uppercase tracking-widest text-muted mr-1 mt-1">repo</span>
+      <a href={filterKind ? `/library/?type=${filterKind}` : '/library/'} class={!filterRepo ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}>all</a>
+      {allRepos.map((r) => (
+        <a
+          href={`/library/?repo=${r}${filterKind ? `&type=${filterKind}` : ''}`}
+          class={filterRepo === r ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}
+        >{r}</a>
+      ))}
+    </div>
+  </Card>
+
+  <Card eyebrow={`results · ${filtered.length}`} title="Documents" padded={false}>
+    {filtered.length === 0 ? (
+      <p class="p-5 text-sm text-muted">No documents match these facets.</p>
+    ) : (
+      <ul class="divide-y-2 divide-border-soft">
+        {filtered.map((e, i) => (
+          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+            <a href={e.href} class="block px-5 py-3 hover:bg-[var(--surface-2)] no-underline text-fg">
+              <div class="flex items-baseline justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                  <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
+                    {e.kind}{e.repo && <> · {e.repo}</>}
+                  </div>
+                  <div class="font-medium">{e.title}</div>
+                </div>
+                {e.date && <div class="font-mono text-xs text-muted whitespace-nowrap">{e.date}</div>}
+              </div>
+              {e.lead && <p class="mt-1 text-sm text-muted leading-snug max-w-3xl">{e.lead}</p>}
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </Card>
+</Base>

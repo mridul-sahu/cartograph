@@ -1,0 +1,87 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import StackView from '~/components/islands/StackView.tsx';
+import { REPOS } from '~/lib/repos';
+
+export function getStaticPaths() {
+  return REPOS.map((repo) => ({ params: { repo } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+---
+
+<Base
+  title={`${repo} · stack`}
+  activeRepo={repo}
+  breadcrumbs={[
+    { label: 'repos', href: '/repo/' },
+    { label: repo, href: `/repo/${repo}/` },
+    { label: 'stack' },
+  ]}
+>
+  <section class="mb-6">
+    <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-1">stack</div>
+    <h1 class="text-3xl font-bold tracking-tight">{repo} branches</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      Every local branch in the fork, auto-discovered (any name — no
+      <code>feature/</code> prefix required). Each row shows PR state,
+      cascade status (rebased onto parent? rebased onto main?), and
+      commits-ahead-of-parent. ★ marks the currently checked-out branch.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / branches" title="Local branches" right={`workspace/${repo}/`} padded={false}>
+    <StackView repo={repo} client:load />
+  </Card>
+
+  <Card eyebrow="02 / cheatsheet" title="The cascade loop" padded={true}>
+    <p class="text-sm text-muted mb-3 max-w-3xl">
+      When a parent PR merges into <code>main</code>, every downstream branch
+      in the stack needs to rebase onto the new main. Cartograph wraps
+      <a href="https://abhinav.github.io/git-spice/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">git-spice</a>
+      (<code>gs</code>) so this is a single command — the slash commands below
+      route to it.
+    </p>
+
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-2">via slash command (recommended)</div>
+        <pre class="text-[11px] font-mono bg-[var(--surface-1)] border-2 border-border p-3 overflow-x-auto leading-relaxed"><span class="text-muted"># after any PR in the stack merges:</span>
+/stack-sync
+<span class="text-muted"># pulls main, drops merged branches,</span>
+<span class="text-muted"># cascade-rebases the rest, pushes with --force-with-lease.</span>
+
+<span class="text-muted"># after rewording / amending a parent:</span>
+/stack-restack
+<span class="text-muted"># rebases all descendants onto the new parent.</span>
+
+<span class="text-muted"># to push every branch + open/update each PR:</span>
+/stack-submit</pre>
+      </div>
+
+      <div>
+        <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-2">underlying git-spice commands</div>
+        <pre class="text-[11px] font-mono bg-[var(--surface-1)] border-2 border-border p-3 overflow-x-auto leading-relaxed"><span class="text-muted"># after any PR in the stack merges:</span>
+gs repo sync
+
+<span class="text-muted"># after rewording / amending a parent:</span>
+gs upstack restack
+
+<span class="text-muted"># push everything + sync PR state:</span>
+gs stack submit
+
+<span class="text-muted"># inspect tree at any point:</span>
+gs ls</pre>
+      </div>
+    </div>
+
+    <p class="text-[11px] text-muted mt-3 max-w-3xl">
+      Don't use raw <code>git rebase --onto</code> or <code>git push --force</code>
+      inside a stack — they bypass parent tracking and can drop commits
+      silently. The slash commands always use <code>--force-with-lease</code>
+      and consult <code>gs</code>'s parent record. If <code>gs</code> isn't
+      installed, run <code>bash scripts/setup-spice.sh</code> first.
+    </p>
+  </Card>
+</Base>

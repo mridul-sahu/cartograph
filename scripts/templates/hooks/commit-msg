@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Cartograph commit-msg hook for __GITHUB_USER__'s forks.
+# Strips Co-Authored-By trailers naming forbidden identities, then rejects
+# any remaining forbidden-token leakage. Last-line-of-defense regex —
+# the primary defense is the per-fork CLAUDE.md.
+
+set -euo pipefail
+
+EXPECTED_EMAIL="__GIT_EMAIL__"
+MSG_FILE="$1"
+
+# 1. Validate identity.
+actual_email="$(git config user.email)"
+if [[ "$actual_email" != "$EXPECTED_EMAIL" ]]; then
+  echo "commit-msg: user.email is '$actual_email', expected '$EXPECTED_EMAIL'" >&2
+  echo "commit-msg: this fork is misconfigured. Re-run scripts/fork-setup.sh." >&2
+  exit 1
+fi
+
+# 2. Strip Co-Authored-By trailers naming forbidden identities.
+#    BSD/GNU sed compatible via -i.bak + rm.
+sed -i.bak -E '/^[[:space:]]*Co-Authored-By:.*(__COAUTHOR_REGEX__).*$/d' "$MSG_FILE"
+rm -f "${MSG_FILE}.bak"
+
+# 3. Scan for forbidden tokens in the body (case-insensitive).
+forbidden='__FORBIDDEN_REGEX__'
+if grep -iE "$forbidden" "$MSG_FILE" >/dev/null; then
+  echo "commit-msg: forbidden token in commit message:" >&2
+  grep -inE "$forbidden" "$MSG_FILE" | head -5 >&2
+  echo >&2
+  echo "commit-msg: this fork must not mention these tokens." >&2
+  echo "commit-msg: remove the offending content and try again." >&2
+  exit 1
+fi
+
+exit 0

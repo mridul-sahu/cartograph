@@ -1,0 +1,101 @@
+---
+import Base from '~/layouts/Base.astro';
+import SectionTitle from '~/components/SectionTitle.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import { REPOS } from '~/lib/repos';
+import { loadSetup } from '~/lib/content';
+import { renderMarkdown, renderCodeBlock } from '~/lib/markdown';
+
+export function getStaticPaths() {
+  return REPOS.filter((r) => loadSetup(r)).map((repo) => ({ params: { repo } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+const setup = loadSetup(repo);
+if (!setup) {
+  return Astro.redirect('/setups/');
+}
+
+const readmeHtml = setup.readme
+  ? (await renderMarkdown(setup.readme.body)).html
+  : null;
+
+// Syntax-highlight each harness file through the same Code Hike path the
+// README's code fences use — identical tokens, dual light/dark theme.
+const fileBlocks = await Promise.all(
+  setup.files.map(async (f) => ({
+    ...f,
+    html: await renderCodeBlock(f.content, f.lang),
+  })),
+);
+
+// code-server opens any host path via ?folder= — point it straight at the
+// setup dir so the harness scripts open in the embedded VS Code.
+const codeServerOrigin = 'http://localhost:47780';
+const ideUrl = `${codeServerOrigin}/?folder=${encodeURIComponent(setup.dir)}`;
+---
+
+<Base
+  title={`setup · ${repo}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'setups', href: '/setups/' },
+    { label: repo },
+  ]}
+>
+  <section class="mb-8">
+    <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2">
+      setup
+    </div>
+    <div class="flex items-end justify-between gap-4 flex-wrap">
+      <h1 class="text-5xl md:text-6xl font-bold tracking-tightish">{repo}</h1>
+      <div class="flex gap-2 flex-wrap">
+        <a
+          href={ideUrl}
+          target="_blank"
+          rel="noopener"
+          class="brutal-button font-mono text-xs"
+        >
+          open setup in VS Code ↗
+        </a>
+        <a href={`/browse/${repo}/`} class="brutal-button font-mono text-xs">
+          browse {repo} IDE →
+        </a>
+      </div>
+    </div>
+    <p class="mt-3 max-w-3xl text-muted">
+      a runnable harness for the <span class="text-fg">{repo}</span> repo —
+      source under <code>setups/{repo}/</code>. The <code>/browse/{repo}/</code>
+      IDE shows this folder alongside the fork.
+    </p>
+  </section>
+
+  {readmeHtml && (
+    <section class="mb-10">
+      <article class="brutal-card p-6 prose-cartograph" set:html={readmeHtml} />
+    </section>
+  )}
+
+  <section class="mb-10">
+    <SectionTitle
+      eyebrow="files"
+      title={`${setup.files.length} harness file${setup.files.length === 1 ? '' : 's'}`}
+      right={`setups/${repo}/`}
+    />
+    <div class="space-y-5">
+      {fileBlocks.map((f) => (
+        <div class="brutal-card p-0 overflow-hidden">
+          <div class="flex items-center justify-between gap-3 px-3 py-2 border-b-2 border-border bg-muted-bg font-mono text-xs">
+            <code class="font-bold">{f.name}</code>
+            <span class="text-muted uppercase tracking-widest text-[10px]">
+              {f.lang}
+            </span>
+          </div>
+          <div set:html={f.html} />
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <MermaidRehydrator client:visible />
+</Base>

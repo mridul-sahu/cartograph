@@ -1,0 +1,11 @@
+---
+interface Props {
+  tone?: 'ok' | 'warn' | 'danger' | 'accent' | 'muted';
+  size?: 'sm' | 'md';
+  class?: string;
+}
+const { tone = 'muted', size = 'md', class: cls = '' } = Astro.props;
+const toneClass = tone === 'muted' ? '' : `chip-${tone}`;
+const sizeClass = size === 'sm' ? 'chip-sm' : '';
+---
+<span class={`chip ${toneClass} ${sizeClass} ${cls}`.trim()}><slot /></span>

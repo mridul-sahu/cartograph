@@ -1,0 +1,28 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import PromotionsFeed from '~/components/islands/PromotionsFeed.tsx';
+import PromoteCandidates from '~/components/islands/PromoteCandidates.tsx';
+---
+
+<Base title="promotions · cartograph" breadcrumbs={[{ label: 'promotions' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Promotions</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      The compound-events log: every <strong>episode auto-drafted</strong> by a
+      session-Stop hook, every <strong>topic auto-promoted</strong> from ≥3
+      tagged episodes, every <strong>topic folded into bedrock</strong>. Both
+      cascades run at <code>SessionStart</code> via
+      <code>scripts/auto-promote.sh</code> — this page is the audit trail for
+      what the chassis did on its own.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / pending" title="Promotion candidates" right="≥3 undistilled episodes — claude drafts the topic" padded={false}>
+    <PromoteCandidates client:load />
+  </Card>
+
+  <Card eyebrow="02 / activity" title="Recent promotions" right="auto-drafts · auto-promotes · bedrock folds">
+    <PromotionsFeed client:load />
+  </Card>
+</Base>

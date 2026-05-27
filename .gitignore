@@ -1,0 +1,76 @@
+# Cartograph local state — generated per user, never committed.
+cartograph.env
+
+# Local content — populated as you use cartograph.
+guides/**
+!guides/.gitkeep
+!guides/seams.md
+episodes/**
+!episodes/.gitkeep
+sessions/**
+!sessions/.gitkeep
+diary/**
+!diary/.gitkeep
+designs/**
+!designs/.gitkeep
+research/**
+!research/.gitkeep
+papers/**
+!papers/.gitkeep
+learn/**
+!learn/.gitkeep
+setups/**
+!setups/.gitkeep
+workspace/**
+!workspace/.gitkeep
+
+# Hidden state — written by hooks at runtime.
+.audit/
+.auto-promote-locks/
+.auto-revise-log/
+.backfill-log/**
+!.backfill-log/.gitkeep
+.cartograph/**
+!.cartograph/.gitkeep
+.code-server-data/
+.drift-reports/**
+!.drift-reports/.gitkeep
+.playwright-mcp/
+.revise-log/
+.session-state/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Node / web build
+node_modules/
+web/dist/
+web/node_modules/
+web/.vite/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local run artifacts
+db.sqlite
+db.sqlite-journal
+db.sqlite-wal
+db.sqlite-shm
+/*.png
+
+# Papers — PDFs are local-only
+papers/**/*.pdf
+
+# VS Code extension build artefacts
+extensions/cartograph/node_modules/
+extensions/cartograph/dist/
+extensions/cartograph/*.vsix

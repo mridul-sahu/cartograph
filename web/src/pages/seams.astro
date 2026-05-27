@@ -1,0 +1,120 @@
+---
+import Base from '~/layouts/Base.astro';
+import SectionTitle from '~/components/SectionTitle.astro';
+import Chip from '~/components/Chip.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import SeamsGraph from '~/components/islands/SeamsGraph.tsx';
+import AdjacentRepos from '~/components/islands/AdjacentRepos.tsx';
+import { loadSeams, loadCrossRefs } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+
+const doc = loadSeams();
+if (!doc) {
+  throw new Error('guides/seams.md missing — cartograph bedrock is incomplete');
+}
+
+const stripped = doc.body.replace(/^#\s+.+?\r?\n+/, '');
+const { html } = await renderMarkdown(stripped);
+
+// Cross-repo file citations — group by (src, dst) so the table reads like the
+// seams document itself: one block per directional pair.
+type Group = { srcRepo: string; dstRepo: string; rows: { topic: string; path: string }[] };
+const refs = loadCrossRefs();
+const groupMap = new Map<string, Group>();
+for (const r of refs) {
+  const key = `${r.srcRepo}|${r.dstRepo}`;
+  const slot = groupMap.get(key) ?? { srcRepo: r.srcRepo, dstRepo: r.dstRepo, rows: [] };
+  slot.rows.push({ topic: r.srcTopic, path: r.path });
+  groupMap.set(key, slot);
+}
+const groups = Array.from(groupMap.values()).sort((a, b) => {
+  if (a.srcRepo !== b.srcRepo) return a.srcRepo.localeCompare(b.srcRepo);
+  return a.dstRepo.localeCompare(b.dstRepo);
+});
+const totalCitations = refs.length;
+---
+
+<Base
+  title="seams"
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'seams' },
+  ]}
+>
+  <section class="mb-10">
+    <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2">
+      guides / cross-repo
+    </div>
+    <h1 class="text-5xl md:text-6xl font-bold tracking-tightish">
+      cross-repo seams
+    </h1>
+    <p class="mt-3 max-w-2xl text-muted">
+      every interaction point between tracked repos. the graph below is the
+      dependency picture; the prose beneath it is the canonical pair-by-pair
+      reference. revise in place when seams shift.
+    </p>
+  </section>
+
+  <section class="mb-12">
+    <SectionTitle eyebrow="graph" title="repo dependencies" right="hover a node to highlight its edges" />
+    <SeamsGraph client:load />
+  </section>
+
+  <section class="mb-12">
+    <SectionTitle eyebrow="canon" title="seams.md" right={`${doc.wordCount.toLocaleString()} words`} />
+    <article class="prose-cartograph" set:html={html} />
+  </section>
+
+  <section class="mb-12">
+    <SectionTitle
+      eyebrow="citations"
+      title="cross-repo file references in topic notes"
+      right={`${totalCitations} path${totalCitations === 1 ? '' : 's'} across ${groups.length} pair${groups.length === 1 ? '' : 's'}`}
+    />
+    {groups.length === 0 ? (
+      <div class="brutal-card p-5 font-mono text-sm text-muted">
+        no cross-repo citations detected — topic notes don't yet reference paths in sibling repos.
+      </div>
+    ) : (
+      <div class="space-y-6">
+        {groups.map((g) => (
+          <div class="brutal-card p-5">
+            <div class="flex items-center gap-2 mb-3 font-mono text-sm">
+              <Chip tone="accent">{g.srcRepo}</Chip>
+              <span class="text-muted" aria-hidden>→</span>
+              <Chip>{g.dstRepo}</Chip>
+              <span class="ml-auto text-muted text-xs">{g.rows.length} citation{g.rows.length === 1 ? '' : 's'}</span>
+            </div>
+            <table class="w-full font-mono text-xs">
+              <thead>
+                <tr class="text-left text-muted uppercase tracking-widest">
+                  <th class="py-1.5 pr-4 font-medium">topic</th>
+                  <th class="py-1.5 font-medium">path cited</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map((r) => (
+                  <tr class="border-t border-border/40">
+                    <td class="py-1 pr-4 whitespace-nowrap">
+                      <a
+                        href={`/repo/${g.srcRepo}/topics/${r.topic}/`}
+                        class="text-accent hover:underline"
+                      >{r.topic}</a>
+                    </td>
+                    <td class="py-1 break-all text-fg">{r.path}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+
+  <section class="mt-16">
+    <AdjacentRepos client:load />
+  </section>
+
+  <MermaidRehydrator client:visible />
+</Base>

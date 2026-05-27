@@ -1,0 +1,152 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import SessionActions from '~/components/islands/SessionActions.tsx';
+import { loadAllSessions } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+export function getStaticPaths() {
+  return loadAllSessions().map((s) => ({ params: { slug: s.slug } }));
+}
+
+const { slug } = Astro.params as { slug: string };
+const all = loadAllSessions();
+const doc = all.find((s) => s.slug === slug);
+if (!doc) {
+  return Astro.redirect('/sessions/');
+}
+
+const { html } = await renderMarkdown(doc.body);
+
+const sorted = [...all];
+const idx = sorted.findIndex((s) => s.slug === slug);
+const prev = idx > 0 ? sorted[idx - 1] : null;
+const next = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null;
+
+const isMissed = doc.edits >= 3 && !doc.episodeWritten;
+const isFork = doc.scope.startsWith('fork-');
+
+// Derive the session log's relative path so SessionActions can open it
+// in the editor. The slug encodes the month prefix (YYYY-MM-DD-...), so
+// we can resolve the month from the first 7 chars of the slug.
+const sessionMonth = slug.slice(0, 7);
+const sessionFilePath = `sessions/${sessionMonth}/${slug}.md`;
+---
+
+<Base
+  title={`session · ${slug}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'sessions', href: '/sessions/' },
+    { label: slug },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2 flex items-center gap-3 flex-wrap">
+          <span>session</span>
+          {isFork && <Chip tone="accent">{doc.scope.replace('fork-', '')}</Chip>}
+          {!isFork && <Chip>{doc.scope}</Chip>}
+          {isMissed && <Chip tone="warn">missed episode</Chip>}
+          {doc.episodeWritten === 'not-needed' && <Chip>trivial</Chip>}
+          {doc.episodeWritten && doc.episodeWritten !== 'not-needed' && (
+            <Chip tone="ok">episode written</Chip>
+          )}
+        </div>
+        <h1 class="text-2xl md:text-3xl font-bold tracking-tightish font-mono break-all">
+          {slug}
+        </h1>
+        <div class="mt-2 font-mono text-xs text-muted flex gap-4 flex-wrap">
+          {doc.startedAt && (
+            <span>started {new Date(doc.startedAt).toLocaleString()}</span>
+          )}
+          {doc.endedAt && (
+            <span>· ended {new Date(doc.endedAt).toLocaleString()}</span>
+          )}
+          <span>· {doc.edits} edit{doc.edits === 1 ? '' : 's'}</span>
+        </div>
+      </header>
+
+      {doc.artifacts.length > 0 && (
+        <section class="mb-10">
+          <h2 class="font-mono text-sm uppercase tracking-widest text-muted mb-3 border-b-2 border-border pb-2">
+            artifacts this session produced ({doc.artifacts.length})
+          </h2>
+          <ul class="space-y-2">
+            {doc.artifacts.map((a) => (
+              <li class="brutal-card p-3 flex items-baseline justify-between gap-3 flex-wrap">
+                <div class="flex items-baseline gap-3 min-w-0">
+                  <code class="font-mono text-[10px] uppercase tracking-widest text-accent shrink-0">
+                    {a.kind}
+                  </code>
+                  <code class="font-mono text-xs text-muted break-all">{a.path}</code>
+                </div>
+                {a.url && (
+                  <a href={a.url} class="font-mono text-xs hover:text-accent shrink-0">
+                    open ↗
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div class="prose-cartograph" set:html={html} />
+
+      {(prev || next) && (
+        <nav class="mt-16 grid grid-cols-2 gap-4 border-t-2 border-border pt-6">
+          {prev ? (
+            <a href={`/sessions/${prev.slug}/`} class="brutal-card p-4 no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">← newer</div>
+              <div class="font-mono mt-1 truncate">{prev.slug}</div>
+            </a>
+          ) : <span />}
+          {next ? (
+            <a href={`/sessions/${next.slug}/`} class="brutal-card p-4 text-right no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">older →</div>
+              <div class="font-mono mt-1 truncate">{next.slug}</div>
+            </a>
+          ) : <span />}
+        </nav>
+      )}
+    </article>
+
+    <aside class="lg:sticky lg:top-32 self-start space-y-6 text-sm">
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">frontmatter</h3>
+        <dl class="grid grid-cols-[7rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">slug</dt><dd class="break-all">{slug}</dd>
+          <dt class="text-muted">scope</dt><dd>{doc.scope}</dd>
+          {doc.data.cwd && (<><dt class="text-muted">cwd</dt><dd class="break-all">{String(doc.data.cwd)}</dd></>)}
+          {doc.startedAt && (<><dt class="text-muted">started</dt><dd class="break-all">{doc.startedAt}</dd></>)}
+          {doc.endedAt && (<><dt class="text-muted">ended</dt><dd class="break-all">{doc.endedAt}</dd></>)}
+          <dt class="text-muted">edits</dt><dd>{doc.edits}</dd>
+          <dt class="text-muted">episode</dt>
+          <dd>
+            {doc.episodeWritten && doc.episodeWritten !== 'not-needed' ? (
+              <a href={`/episodes/${doc.episodeWritten.replace(/\.md$/, '')}/`} class="hover:text-accent break-all">
+                {doc.episodeWritten}
+              </a>
+            ) : doc.episodeWritten === 'not-needed' ? (
+              <span class="text-muted">not needed</span>
+            ) : (
+              <span class="text-warn">missing</span>
+            )}
+          </dd>
+        </dl>
+      </div>
+
+      <SessionActions
+        slug={slug}
+        scope={doc.scope}
+        filePath={sessionFilePath}
+        isMissed={isMissed}
+        episodeWritten={doc.episodeWritten}
+        client:load
+      />
+    </aside>
+  </div>
+</Base>

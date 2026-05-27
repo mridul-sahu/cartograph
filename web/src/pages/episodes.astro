@@ -1,0 +1,135 @@
+---
+import Base from '~/layouts/Base.astro';
+import SectionTitle from '~/components/SectionTitle.astro';
+import Chip from '~/components/Chip.astro';
+import EpisodesTimeline from '~/components/islands/EpisodesTimeline.tsx';
+import type { EpisodeCard } from '~/components/islands/EpisodesTimeline.tsx';
+import { loadEpisodes, loadPromoteCandidates } from '~/lib/content';
+import { REPOS } from '~/lib/repos';
+
+const episodes = loadEpisodes();
+const candidates = loadPromoteCandidates(3);
+
+const cards: EpisodeCard[] = episodes.map((e) => ({
+  slug: e.slug,
+  month: e.month,
+  title: e.title,
+  excerpt: e.excerpt,
+  repo: e.repo,
+  tags: e.tags,
+  date: e.data.date ? String(e.data.date) : null,
+  wordCount: e.wordCount,
+}));
+
+// All distinct tags across episodes, sorted by frequency desc (then name).
+const tagCounts = new Map<string, number>();
+for (const e of episodes) {
+  for (const t of e.tags) {
+    tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+  }
+}
+const tags = Array.from(tagCounts.entries())
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  .map(([t]) => t);
+---
+
+<Base
+  title="episodes"
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'episodes' },
+  ]}
+>
+  <section class="mb-10">
+    <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2">
+      learn / episodes
+    </div>
+    <h1 class="text-5xl md:text-6xl font-bold tracking-tightish">
+      episodes
+    </h1>
+    <p class="mt-3 max-w-2xl text-muted">
+      one-shot worknotes from real coding sessions. when ≥ 3 share a tag,
+      the digest surfaces them as candidates for distillation into a
+      durable topic note.
+    </p>
+  </section>
+
+  {episodes.length === 0 ? (
+    <section class="mb-14">
+      <div
+        class="brutal-card flex flex-col items-center justify-center text-center"
+        style="min-height: 28rem; padding: 3rem 1.5rem;"
+      >
+        <div
+          class="font-mono font-bold leading-none mb-6 select-none"
+          style="font-size: clamp(8rem, 18vw, 14rem); color: var(--accent);"
+          aria-hidden
+        >0</div>
+        <h2 class="text-2xl md:text-3xl font-bold tracking-tightish mb-3">
+          no episodes yet
+        </h2>
+        <p class="max-w-md text-muted leading-relaxed mb-6">
+          open <span class="text-fg font-mono">claude code</span> in a fork
+          and do a real task — the <span class="text-fg font-mono">Stop</span>
+          {' '}hook will prompt you to write your first episode.
+        </p>
+        <div class="flex flex-wrap items-center justify-center gap-2 font-mono text-xs">
+          <Chip>episodes/YYYY-MM/&lt;slug&gt;.md</Chip>
+          <Chip tone="accent">layer: episode</Chip>
+        </div>
+      </div>
+    </section>
+  ) : (
+    <>
+      {candidates.length > 0 && (
+        <section class="mb-12">
+          <SectionTitle
+            eyebrow="digest"
+            title="promote candidates"
+            right={`tags with ≥ 3 undistilled episodes`}
+          />
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {candidates.map((c) => (
+              <article class="brutal-card p-4">
+                <div class="flex items-baseline justify-between gap-3 mb-2">
+                  <h3 class="font-mono text-base font-bold">{c.tag}</h3>
+                  <span class="chip chip-accent">{c.count} eps</span>
+                </div>
+                <div class="font-mono text-xs text-muted">
+                  spans:{' '}
+                  {c.repos.length === 0 ? (
+                    <span class="text-muted">—</span>
+                  ) : (
+                    c.repos.map((r, i) => (
+                      <>
+                        {i > 0 && <span class="text-border mx-0.5">·</span>}
+                        <span class="text-fg">{r}</span>
+                      </>
+                    ))
+                  )}
+                </div>
+                <div class="font-mono text-[11px] text-muted mt-2">
+                  run <code>/promote {c.tag}</code> to distill
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <SectionTitle
+          eyebrow="all"
+          title={`${episodes.length} episode${episodes.length === 1 ? '' : 's'}`}
+          right="grouped by month · most recent first"
+        />
+        <EpisodesTimeline
+          episodes={cards}
+          repos={[...REPOS]}
+          tags={tags}
+          client:load
+        />
+      </section>
+    </>
+  )}
+</Base>

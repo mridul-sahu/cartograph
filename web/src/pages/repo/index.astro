@@ -1,0 +1,59 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import StatusPane from '~/components/islands/StatusPane.tsx';
+import { REPOS } from '~/lib/repos';
+import { loadBedrock } from '~/lib/content';
+
+// Repos chooser — landing for the "repos" nav. Used to redirect to /repo/jax/
+// which silently picked one repo with no chooser; now you actually see all
+// five with drift state and pick.
+
+const cards = REPOS.map((r) => {
+  const overview = loadBedrock(r, 'overview');
+  // Strip front-matter + every heading then take the first paragraph as the lead.
+  // Bedrock overviews almost always open with `## What this codebase does`, so the
+  // first line-with-prose lives several lines past the title.
+  const body = (overview?.body ?? '').replace(/^---[\s\S]*?---\s*/m, '');
+  const lead = body
+    .split(/\n\s*\n/)
+    .map((p) => p.trim().replace(/^#+\s+.*$/gm, '').replace(/\n/g, ' ').trim())
+    .find((p) => p.length > 60 && !p.startsWith('---'));
+  const cleaned = (lead ?? '').replace(/`/g, '').replace(/\s+/g, ' ').slice(0, 220);
+  return { repo: r, lead: cleaned + (cleaned.length === 220 ? '…' : '') };
+});
+---
+
+<Base title="repos" breadcrumbs={[{ label: 'repos' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Repos</h1>
+    <p class="mt-2 text-muted text-base max-w-2xl">
+      The five tracked codebases. Each card shows drift status, freshness, and
+      a one-line summary — pick one to dive into bedrock, topics, episodes,
+      designs, research, papers, setup, and ramp-up.
+    </p>
+  </section>
+
+  <Card eyebrow="01 / status" title="Live drift + freshness" right="auto-refresh 60s">
+    <StatusPane client:load />
+  </Card>
+
+  <Card eyebrow="02 / what each one is" title="At a glance" padded={false}>
+    <ul class="divide-y divide-[var(--border-soft)]">
+      {cards.map((c, i) => (
+        <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
+          <a
+            href={`/repo/${c.repo}/`}
+            class="block px-5 py-4 hover:bg-[var(--surface-2)] no-underline text-fg"
+          >
+            <div class="flex items-baseline gap-3">
+              <span class="font-mono text-2xl font-bold tracking-tight">{c.repo}</span>
+              <span class="text-muted text-xs">→ /repo/{c.repo}/</span>
+            </div>
+            {c.lead && <p class="mt-1 text-sm text-muted max-w-3xl">{c.lead}</p>}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </Card>
+</Base>

@@ -1,0 +1,63 @@
+---
+import Base from '~/layouts/Base.astro';
+import Card from '~/components/Card.astro';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { renderMarkdown } from '~/lib/markdown';
+
+const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
+
+export function getStaticPaths() {
+  const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
+  const dir = join(ROOT, 'diary');
+  if (!existsSync(dir)) return [];
+  const out: { params: { slug: string } }[] = [];
+  for (const m of readdirSync(dir).filter((d) => /^\d{4}-\d{2}$/.test(d))) {
+    for (const f of readdirSync(join(dir, m)).filter((f) => f.endsWith('.md'))) {
+      out.push({ params: { slug: f.replace(/\.md$/, '') } });
+    }
+  }
+  return out;
+}
+
+const { slug } = Astro.params as { slug: string };
+const month = slug.slice(0, 7);
+const path = join(ROOT, 'diary', month, `${slug}.md`);
+const raw = existsSync(path) ? readFileSync(path, 'utf8') : null;
+const rendered = raw ? await renderMarkdown(raw) : null;
+---
+
+<Base
+  title={`${slug} · diary`}
+  breadcrumbs={[
+    { label: 'diary', href: '/diary/' },
+    { label: slug },
+  ]}
+>
+  <section class="mb-6">
+    <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-1">diary entry</div>
+    <h1 class="text-3xl font-bold tracking-tight">{slug}</h1>
+    <p class="mt-2 font-mono text-xs text-muted">diary/{month}/{slug}.md</p>
+  </section>
+
+  {rendered ? (
+    <Card eyebrow="content" title="What the chassis did" padded={true}>
+      <article class="prose max-w-none" set:html={rendered.html} />
+    </Card>
+  ) : (
+    <Card eyebrow="state" title="Not found">
+      <p class="text-sm text-muted">No diary entry for <code>{slug}</code>.</p>
+    </Card>
+  )}
+</Base>
+
+<style is:global>
+  .prose h1, .prose h2, .prose h3 { font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; }
+  .prose h2 { font-size: 1.25rem; }
+  .prose h3 { font-size: 1.05rem; }
+  .prose ul { list-style: disc; padding-left: 1.5em; }
+  .prose li { margin: 0.25em 0; }
+  .prose code { background: var(--surface-1); padding: 0 0.25em; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.85em; }
+  .prose pre { background: var(--surface-1); padding: 0.75em 1em; overflow-x: auto; border: 2px solid var(--border-soft); }
+</style>

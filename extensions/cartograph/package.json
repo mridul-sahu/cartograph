@@ -1,0 +1,98 @@
+{
+  "name": "cartograph",
+  "displayName": "Cartograph",
+  "description": "Surfaces the Cartograph knowledge base inside the editor — cited-line gutter markers, hover cards, file banners, walkthrough tours, and Claude-in-context.",
+  "version": "0.1.0",
+  "publisher": "cartograph-local",
+  "private": true,
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "cartograph.chat",
+        "name": "cartograph",
+        "fullName": "Cartograph",
+        "description": "Ask the Cartograph knowledge base — answers grounded in bedrock + topic notes",
+        "isSticky": true,
+        "commands": [
+          { "name": "explain", "description": "Explain the active file" },
+          { "name": "tour", "description": "Start a walkthrough tour" },
+          { "name": "seams", "description": "Cross-repo seams for the active file" }
+        ]
+      }
+    ],
+    "commands": [
+      { "command": "cartograph.ask", "title": "Cartograph: Ask Claude about selection" },
+      { "command": "cartograph.explainFile", "title": "Cartograph: Explain this file" },
+      { "command": "cartograph.startTour", "title": "Cartograph: Start a walkthrough tour" },
+      { "command": "cartograph.tourNext", "title": "Cartograph: Tour — next step" },
+      { "command": "cartograph.tourPrev", "title": "Cartograph: Tour — previous step" },
+      { "command": "cartograph.seams", "title": "Cartograph: Cross-repo seams for this file" },
+      { "command": "cartograph.refresh", "title": "Cartograph: Refresh citation index" },
+      { "command": "cartograph.openDashboard", "title": "Cartograph: Open repo dashboard in browser" },
+      { "command": "cartograph.search", "title": "Cartograph: Search the corpus (BM25)" },
+      { "command": "cartograph.openDriftQueue", "title": "Cartograph: Open the drift / review queue" },
+      { "command": "cartograph.refreshDrift", "title": "Cartograph: Refresh drift status" }
+    ],
+    "keybindings": [
+      {
+        "command": "cartograph.ask",
+        "key": "cmd+shift+a",
+        "mac": "cmd+shift+a",
+        "win": "ctrl+shift+a",
+        "linux": "ctrl+shift+a",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "cartograph.search",
+        "key": "cmd+shift+k",
+        "mac": "cmd+shift+k",
+        "win": "ctrl+shift+k",
+        "linux": "ctrl+shift+k"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cartograph",
+          "title": "Cartograph",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cartograph": [
+        { "type": "webview", "id": "cartograph.panel", "name": "Knowledge" }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        { "command": "cartograph.ask", "group": "cartograph@1", "when": "editorHasSelection" },
+        { "command": "cartograph.seams", "group": "cartograph@2" }
+      ]
+    },
+    "configuration": {
+      "title": "Cartograph",
+      "properties": {
+        "cartograph.apiBase": {
+          "type": "string",
+          "default": "http://localhost:47777",
+          "description": "Base URL of the Cartograph status server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  }
+}

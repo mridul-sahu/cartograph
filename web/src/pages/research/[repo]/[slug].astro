@@ -1,0 +1,169 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import ContentActions from '~/components/islands/ContentActions.tsx';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import BookmarkButton from '~/components/islands/BookmarkButton.tsx';
+import RelatedNotes from '~/components/islands/RelatedNotes.tsx';
+import Backlinks from '~/components/islands/Backlinks.tsx';
+import { REPOS } from '~/lib/repos';
+import { loadResearch, loadResearchNote } from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+export function getStaticPaths() {
+  return REPOS.flatMap((repo) =>
+    loadResearch(repo).map((n) => ({ params: { repo, slug: n.slug } })),
+  );
+}
+
+const { repo, slug } = Astro.params as { repo: string; slug: string };
+const doc = loadResearchNote(repo, slug);
+if (!doc) {
+  return Astro.redirect(`/research/`);
+}
+
+const { html, headings } = await renderMarkdown(doc.body);
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+const tags = Array.isArray(doc.data.tags) ? (doc.data.tags as string[]) : [];
+const sources = Array.isArray(doc.data.sources) ? (doc.data.sources as string[]) : [];
+
+const siblings = loadResearch(repo);
+const idx = siblings.findIndex((s) => s.slug === slug);
+const prev = idx > 0 ? siblings[idx - 1] : null;
+const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+---
+
+<Base
+  title={`research · ${repo} · ${slug}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'research', href: '/research/' },
+    { label: repo, href: `/repo/${repo}/` },
+    { label: slug },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-8">
+        <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2 flex items-center gap-3 flex-wrap">
+          <span>research</span>
+          <span class="text-border">·</span>
+          <a href={`/repo/${repo}/`} class="hover:text-accent">{repo}</a>
+          <Chip>intermediate</Chip>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tightish font-mono break-words">
+          {slug}
+        </h1>
+        {doc.data.last_revised && (
+          <p class="mt-2 font-mono text-xs text-muted">
+            revised {formatDate(String(doc.data.last_revised))}
+          </p>
+        )}
+      </header>
+
+      <div class="prose-cartograph" set:html={html} />
+
+      {(prev || next) && (
+        <nav class="mt-16 grid grid-cols-2 gap-4 border-t-2 border-border pt-6">
+          {prev ? (
+            <a href={`/research/${repo}/${prev.slug}/`} class="brutal-card p-4 no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">← newer</div>
+              <div class="font-mono mt-1 truncate">{prev.slug}</div>
+            </a>
+          ) : <span />}
+          {next ? (
+            <a href={`/research/${repo}/${next.slug}/`} class="brutal-card p-4 text-right no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">older →</div>
+              <div class="font-mono mt-1 truncate">{next.slug}</div>
+            </a>
+          ) : <span />}
+        </nav>
+      )}
+    </article>
+
+    <aside class="lg:sticky lg:top-32 self-start space-y-6 text-sm">
+      {(() => {
+        const notePath = `research/${repo}/${slug}.md`;
+        return (
+          <>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">pin</h3>
+              <BookmarkButton path={notePath} title={slug} client:load />
+            </div>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">related</h3>
+              <RelatedNotes path={notePath} client:visible />
+            </div>
+            <div class="brutal-card p-4">
+              <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">backlinks</h3>
+              <Backlinks path={notePath} client:visible />
+            </div>
+          </>
+        );
+      })()}
+
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">frontmatter</h3>
+        <dl class="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">repo</dt><dd>{repo}</dd>
+          <dt class="text-muted">slug</dt><dd class="break-all">{slug}</dd>
+          {doc.data.last_revised && (<><dt class="text-muted">revised</dt><dd>{formatDate(String(doc.data.last_revised))}</dd></>)}
+          <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
+          {tags.length > 0 && (
+            <>
+              <dt class="text-muted">tags</dt>
+              <dd class="flex flex-wrap gap-1">
+                {tags.map((t) => <code class="text-fg">{t}</code>)}
+              </dd>
+            </>
+          )}
+        </dl>
+      </div>
+
+      {sources.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-2">sources</h3>
+          <ul class="space-y-1 font-mono text-xs">
+            {sources.map((s) => {
+              const isUrl = /^https?:/.test(s);
+              return (
+                <li class="break-all">
+                  {isUrl ? (
+                    <a href={s} target="_blank" rel="noopener noreferrer" class="text-muted hover:text-accent">{s}</a>
+                  ) : (
+                    <span class="text-muted">{s}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {tocHeadings.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">on this page</h3>
+          <ul class="space-y-1.5 text-sm">
+            {tocHeadings.map((h) => (
+              <li class={h.depth === 3 ? 'pl-3 text-muted' : ''}>
+                <a href={`#${h.id}`} class="hover:text-accent">{h.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <ContentActions
+        kind="research"
+        repo={repo}
+        slug={slug}
+        filePath={`research/${repo}/${slug}.md`}
+        client:load
+      />
+    </aside>
+  </div>
+
+  <MermaidRehydrator client:visible />
+</Base>

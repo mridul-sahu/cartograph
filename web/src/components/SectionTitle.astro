@@ -1,0 +1,19 @@
+---
+interface Props {
+  eyebrow?: string;
+  title: string;
+  right?: string;
+  count?: number | null;
+}
+const { eyebrow, title, right, count = null } = Astro.props;
+---
+<div class="mb-5 flex items-baseline justify-between gap-4 border-b-2 border-border pb-2">
+  <h2 class="flex items-baseline gap-3 min-w-0">
+    {eyebrow && <span class="font-mono text-xs text-muted uppercase tracking-widest">{eyebrow}</span>}
+    <span class="text-2xl font-bold tracking-tightish">{title}</span>
+    {count !== null && count !== undefined && (
+      <span class="chip chip-sm text-muted">{count}</span>
+    )}
+  </h2>
+  {right && <span class="font-mono text-xs text-muted shrink-0">{right}</span>}
+</div>

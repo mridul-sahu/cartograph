@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Opt into Node 24 for all JavaScript-based actions, ahead of GitHub's
+# June 2026 default-switch. Avoids the per-step Node 20 deprecation warning
+# and matches the recommended migration path. Once Node 24 is the default
+# (June 2026+), this can be removed.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  test:
+    name: smoke tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Node 18
+        uses: actions/setup-node@v6
+        with:
+          node-version: "18"
+
+      - name: Install linters + python deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          # ruff for python lint; fastapi/uvicorn/pyyaml/mcp so the python
+          # smoke tests can import the modules they exercise.
+          python -m pip install ruff fastapi 'uvicorn[standard]' pyyaml mcp
+
+      - name: Bootstrap cartograph.env for tests
+        run: |
+          # The smoke tests source load-config.sh which expects cartograph.env
+          # to exist. Use a synthetic config for CI — these values aren't
+          # used to push or call gh.
+          cat > cartograph.env <<'EOF'
+          CARTOGRAPH_GITHUB_USER=ci-test-user
+          CARTOGRAPH_GIT_USER_NAME=ci-test-user
+          CARTOGRAPH_GIT_USER_EMAIL=ci@example.com
+          CARTOGRAPH_SSH_HOST_ALIAS=github.com
+          CARTOGRAPH_FORBIDDEN_EXTRAS=
+          EOF
+
+      - name: Run smoke tests
+        run: bash tests/smoke.sh
+
+  build-web:
+    name: web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web deps
+        run: cd web && npm ci
+      - name: Build static site
+        run: cd web && npm run build

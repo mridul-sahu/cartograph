@@ -1,0 +1,510 @@
+---
+import Base from '~/layouts/Base.astro';
+import SectionTitle from '~/components/SectionTitle.astro';
+import Chip from '~/components/Chip.astro';
+import HoverCard from '~/components/islands/HoverCard.tsx';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import BackfillButton from '~/components/islands/BackfillButton.tsx';
+import CheckDriftButton from '~/components/islands/CheckDriftButton.tsx';
+import BranchDrift from '~/components/islands/BranchDrift.tsx';
+import AnchorCoverageStrip from '~/components/islands/AnchorCoverageStrip.tsx';
+import RepoDriftBadge from '~/components/islands/RepoDriftBadge.tsx';
+import AskClaude from '~/components/islands/AskClaude.tsx';
+import { REPOS } from '~/lib/repos';
+import {
+  loadBedrock,
+  loadTopics,
+  loadRampUp,
+  loadWalkthroughsForRepo,
+  loadDriftReport,
+  loadEpisodes,
+  loadAllDrafts,
+  loadResearch,
+  loadPapers,
+  loadSetup,
+  loadDesignsForRepo,
+} from '~/lib/content';
+import { formatDate } from '~/lib/time';
+import { renderMarkdown } from '~/lib/markdown';
+
+export function getStaticPaths() {
+  return REPOS.map((repo) => ({ params: { repo } }));
+}
+
+const { repo } = Astro.params as { repo: string };
+
+const bedrock = loadBedrock(repo);
+const topics = loadTopics(repo);
+const rampUp = loadRampUp(repo);
+const walkthroughs = loadWalkthroughsForRepo(repo);
+const driftReport = loadDriftReport(repo);
+const driftHtml = driftReport ? (await renderMarkdown(driftReport)).html : null;
+const episodes = loadEpisodes()
+  .filter((e) => e.data.repo === repo)
+  .sort((a, b) => String(b.data.date ?? '').localeCompare(String(a.data.date ?? '')));
+const drafts = loadAllDrafts().filter((d) => d.data.repo === repo);
+const research = loadResearch(repo);
+const papers = loadPapers(repo);
+const setup = loadSetup(repo);
+const designs = loadDesignsForRepo(repo);
+
+const bedrockTeasers = await Promise.all(
+  (['overview', 'architecture', 'conventions'] as const).map(async (kind) => {
+    const doc = bedrock[kind];
+    if (!doc) return { kind, doc: null, teaser: '' };
+    const firstParagraph = doc.body
+      .split('\n\n')
+      .find((p) => p.trim() && !p.trim().startsWith('#'))
+      ?.replace(/\n/g, ' ')
+      .trim() ?? '';
+    return { kind, doc, teaser: firstParagraph.slice(0, 200) + (firstParagraph.length > 200 ? '…' : '') };
+  })
+);
+
+const topicTeasers = topics.map((t) => {
+  const lines = t.body
+    .split('\n')
+    .filter((l) => l.trim() && !l.startsWith('#'))
+    .slice(0, 2)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  return { ...t, teaser: lines.slice(0, 220) + (lines.length > 220 ? '…' : '') };
+});
+
+// Section TOC — what's on this page, with counts, so the reader can jump
+// instead of scrolling past nine descriptive paragraphs. Ordered so authored
+// artefacts (topics, designs, setups) sit above the external/derived ones
+// (research, papers, walkthroughs) and the lowest-signal feed (episodes,
+// drafts, drift) lands last.
+const sections = [
+  { id: 'bedrock',     label: 'bedrock',     count: Object.values(bedrock).filter(Boolean).length, of: 3 },
+  { id: 'topics',      label: 'topics',      count: topics.length },
+  { id: 'designs',     label: 'designs',     count: designs.length },
+  { id: 'setups',      label: 'setups',      count: setup ? 1 : 0 },
+  { id: 'research',    label: 'research',    count: research.length },
+  { id: 'papers',      label: 'papers',      count: papers.length },
+  { id: 'learn',       label: 'learn',       count: (rampUp ? 1 : 0) + walkthroughs.length },
+  { id: 'episodes',    label: 'episodes',    count: episodes.length },
+  ...(drafts.length > 0 ? [{ id: 'drafts', label: 'drafts', count: drafts.length }] : []),
+  ...(driftHtml ? [{ id: 'drift', label: 'drift', count: 1, tone: 'warn' as const }] : []),
+  { id: 'stack-link', label: 'stack', count: '↗', href: `/repo/${repo}/stack/`, tone: 'link' as const },
+];
+---
+
+<Base
+  title={`${repo} · repo`}
+  activeRepo={repo}
+  breadcrumbs={[
+    { label: 'repos', href: '/repo/' },
+    { label: repo },
+  ]}
+>
+  {/* Header — one title row + one compact status row.
+      Previous design crammed 5 chip-buttons next to the title; collapsed
+      into plain-text status (backfilled / revised) + small action buttons
+      on the same line. Drift badge stays adjacent to title for visibility. */}
+  <section class="mb-6">
+    <div class="font-mono text-[10px] text-muted uppercase tracking-widest mb-1">repo</div>
+    <div class="flex items-baseline gap-4 flex-wrap mb-3">
+      <h1 class="font-mono text-5xl md:text-6xl font-bold tracking-tight leading-none">{repo}</h1>
+      <RepoDriftBadge repo={repo} client:load />
+    </div>
+    <div class="flex items-center justify-between gap-4 flex-wrap font-mono text-xs border-t border-[var(--border-soft)] pt-3">
+      <div class="flex flex-wrap gap-x-5 gap-y-1 text-muted">
+        {bedrock.overview?.data.backfilled_from_sha && (
+          <span>backfilled <code class="text-fg">{String(bedrock.overview.data.backfilled_from_sha)}</code></span>
+        )}
+        {bedrock.overview?.data.last_revised && (
+          <span>revised <span class="text-fg">{formatDate(bedrock.overview.data.last_revised as string)}</span></span>
+        )}
+        {driftHtml && (
+          <a href="#drift" class="text-[var(--danger)] hover:underline">drift open ↓</a>
+        )}
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <a
+          href={`/browse/${repo}/`}
+          class="brutal-button font-mono text-xs"
+          title={`browse workspace/${repo}/ in cartograph — tree + ripgrep + insights`}
+        >browse {repo} →</a>
+        <BackfillButton repo={repo} client:load />
+        <CheckDriftButton repo={repo} client:load />
+      </div>
+    </div>
+  </section>
+
+  <BranchDrift repo={repo} client:load />
+  <AnchorCoverageStrip repo={repo} client:load />
+
+  {/* Section nav — anchor jumps with counts. One sticky strip, no chip noise. */}
+  <nav aria-label="On this page" class="mb-8 sticky top-[3.25rem] z-20 -mx-6 px-6 py-2 bg-bg/95 backdrop-blur border-y border-[var(--border-soft)]">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
+      <span class="text-muted uppercase tracking-widest text-[10px]">jump</span>
+      {sections.map((s) => (
+        <a
+          href={s.href ?? `#${s.id}`}
+          class={
+            s.tone === 'warn'
+              ? 'text-[var(--danger)] hover:underline'
+              : s.tone === 'link'
+                ? 'text-accent hover:underline'
+                : s.count === 0
+                  ? 'text-muted hover:text-fg'
+                  : 'text-fg hover:text-accent'
+          }
+        >
+          {s.label}<span class="text-muted ml-0.5">{s.count}{s.of ? `/${s.of}` : ''}</span>
+        </a>
+      ))}
+    </div>
+  </nav>
+
+  <section id="bedrock" class="mb-14 scroll-mt-32">
+    <SectionTitle eyebrow="bedrock" title="durable guides" right="rarely revised · high authority" />
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {bedrockTeasers.map((t) => (
+        t.doc ? (
+          <a href={`/repo/${repo}/bedrock/${t.kind}/`} class="brutal-card p-5 no-underline text-fg block">
+            <div class="flex items-baseline justify-between mb-2">
+              <h3 class="font-mono text-lg font-bold uppercase">{t.kind}</h3>
+              <Chip tone="ok">present</Chip>
+            </div>
+            <p class="text-sm text-muted mb-3 leading-relaxed">{t.teaser || '(no body yet)'}</p>
+            <div class="font-mono text-xs text-muted flex gap-3 flex-wrap">
+              <span>{t.doc.wordCount.toLocaleString()} words</span>
+              {t.doc.data.last_revised && <span>· revised {formatDate(t.doc.data.last_revised as string)}</span>}
+            </div>
+          </a>
+        ) : (
+          <article class="brutal-card p-5">
+            <div class="flex items-baseline justify-between mb-2">
+              <h3 class="font-mono text-lg font-bold uppercase">{t.kind}</h3>
+              <Chip tone="danger">missing</Chip>
+            </div>
+            <p class="text-sm text-muted">stub only — write this file in <code>guides/{repo}/{t.kind}.md</code>.</p>
+          </article>
+        )
+      ))}
+    </div>
+  </section>
+
+  <section id="topics" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="topics"
+      title="revisable deep dives"
+      right={`${topics.length} note${topics.length === 1 ? '' : 's'} · guides/${repo}/topics/`}
+    />
+    {topics.length === 0 ? (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no topic notes yet for <span class="text-fg">{repo}</span>. promote 3+ episodes with the same tag via <code>/promote</code>.
+      </div>
+    ) : (
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {topicTeasers.map((t) => (
+          <HoverCard href={`/repo/${repo}/topics/${t.slug}/`} client:visible>
+            <div class="flex items-baseline justify-between gap-3 mb-1">
+              <h3 class="font-mono text-base font-bold">{t.slug}</h3>
+              {t.data.synthesized_from_exploration && <Chip>synthesized</Chip>}
+            </div>
+            <p class="text-sm text-muted leading-relaxed mb-3">{t.teaser}</p>
+            <div class="font-mono text-xs text-muted flex gap-3 flex-wrap">
+              <span>{t.wordCount.toLocaleString()} words</span>
+              {t.data.last_revised && <span>· {formatDate(t.data.last_revised as string)}</span>}
+            </div>
+          </HoverCard>
+        ))}
+      </div>
+    )}
+  </section>
+
+  <section id="designs" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="designs"
+      title={designs.length === 0 ? 'no designs yet' : `${designs.length} design${designs.length === 1 ? '' : 's'}`}
+      right={`designs/${repo}/`}
+    />
+    {designs.length === 0 ? (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no designs for <code>{repo}</code> yet. add one at <code>designs/{repo}/&lt;slug&gt;/README.md</code> with a build script + the deliverable it emits.
+      </div>
+    ) : (
+      <ul class="space-y-3">
+        {designs.map((d) => {
+          const deliverable = d.deliverables[0] ?? null;
+          return (
+            <li>
+              <a href={`/designs/${repo}/${d.slug}/`} class="brutal-card p-4 no-underline text-fg block">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                  <h3 class="font-bold text-lg tracking-tightish">{d.title}</h3>
+                  {deliverable && <Chip tone="accent">{deliverable.ext.replace(/^\./, '')}</Chip>}
+                </div>
+                <div class="font-mono text-xs text-muted">{d.slug}</div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </section>
+
+  <section id="setups" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="setups"
+      title="runnable harness"
+      right={`setups/${repo}/`}
+    />
+    {setup ? (
+      <a href={`/setups/${repo}/`} class="brutal-card p-4 no-underline text-fg block">
+        <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+          <h3 class="font-mono text-base font-bold tracking-tightish">
+            {setup.readme?.data.title ? String(setup.readme.data.title) : `${repo} harness`}
+          </h3>
+          <span class="font-mono text-xs text-muted">{setup.files.length} file{setup.files.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="mt-1 flex gap-1.5 flex-wrap">
+          {setup.files.map((f) => (
+            <code class="font-mono text-[10px] uppercase tracking-widest text-muted">{f.name}</code>
+          ))}
+        </div>
+      </a>
+    ) : (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no setup for <code>{repo}</code> yet. add one under <code>setups/{repo}/</code> (a README.md plus the runnable files).
+      </div>
+    )}
+  </section>
+
+  <section id="research" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="research"
+      title="intermediate notes"
+      right={`${research.length} note${research.length === 1 ? '' : 's'} · research/${repo}/`}
+    />
+    {research.length === 0 ? (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no research notes for <code>{repo}</code> yet.
+      </div>
+    ) : (
+      <ul class="space-y-3">
+        {research.map((n) => {
+          const tags = Array.isArray(n.data.tags) ? (n.data.tags as string[]) : [];
+          const sources = Array.isArray(n.data.sources) ? (n.data.sources as string[]) : [];
+          return (
+            <li>
+              <a href={`/research/${repo}/${n.slug}/`} class="brutal-card p-4 no-underline text-fg block">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                  <h3 class="font-mono text-base font-bold tracking-tightish break-all">{n.slug}</h3>
+                  {n.data.last_revised && (
+                    <span class="font-mono text-xs text-muted">{formatDate(String(n.data.last_revised))}</span>
+                  )}
+                </div>
+                {tags.length > 0 && (
+                  <div class="mt-1 flex gap-1.5 flex-wrap">
+                    {tags.slice(0, 6).map((t) => (
+                      <code class="font-mono text-[10px] uppercase tracking-widest text-muted">{t}</code>
+                    ))}
+                  </div>
+                )}
+                <div class="mt-2 font-mono text-xs text-muted flex gap-3 flex-wrap">
+                  <span>{n.wordCount.toLocaleString()} words</span>
+                  {sources.length > 0 && <span>· {sources.length} source{sources.length === 1 ? '' : 's'}</span>}
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </section>
+
+  <section id="papers" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="papers"
+      title="bookshelf"
+      right={`${papers.length} paper${papers.length === 1 ? '' : 's'} · papers/${repo}/`}
+    />
+    {papers.length === 0 ? (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no papers for <code>{repo}</code> yet.
+      </div>
+    ) : (
+      <ul class="space-y-3">
+        {papers.map((p) => {
+          const title = typeof p.data.title === 'string' ? p.data.title : p.slug;
+          const authors = Array.isArray(p.data.authors) ? (p.data.authors as string[]) : [];
+          const year = p.data.year;
+          return (
+            <li>
+              <a href={`/papers/${repo}/${p.slug}/`} class="brutal-card p-4 no-underline text-fg block">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                  <h3 class="font-bold text-base leading-snug">{title}</h3>
+                  {p.hasPdf ? (
+                    <Chip tone="accent" size="sm">pdf</Chip>
+                  ) : p.data.arxiv ? (
+                    <Chip size="sm">arxiv</Chip>
+                  ) : p.data.url ? (
+                    <Chip size="sm">link</Chip>
+                  ) : null}
+                </div>
+                <div class="font-mono text-xs text-muted">
+                  {authors.length > 0 && <span>{authors.join(', ')}</span>}
+                  {year && <span> · {year}</span>}
+                  <span> · {p.slug}</span>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </section>
+
+  <section id="learn" class="mb-14 scroll-mt-32 grid grid-cols-1 md:grid-cols-2 gap-5">
+    <article class="brutal-card p-5">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="font-mono text-sm uppercase tracking-widest text-muted">ramp-up</h3>
+        {rampUp ? <Chip tone="ok">present</Chip> : <Chip tone="warn">missing</Chip>}
+      </div>
+      {rampUp ? (
+        <>
+          <p class="text-fg font-bold text-lg mb-1">
+            {rampUp.data.estimated_days ? `${rampUp.data.estimated_days}-day path` : 'ramp-up path'}
+          </p>
+          <p class="text-sm text-muted mb-3">{rampUp.wordCount.toLocaleString()} words · revised {formatDate(rampUp.data.last_revised as string)}</p>
+          <a href={`/ramp-up/${repo}/`} class="brutal-button brutal-button-accent text-sm">open ramp-up →</a>
+        </>
+      ) : (
+        <p class="text-sm text-muted">no ramp-up file at <code>learn/ramp-up/{repo}.md</code>.</p>
+      )}
+    </article>
+
+    <article class="brutal-card p-5">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="font-mono text-sm uppercase tracking-widest text-muted">walkthroughs</h3>
+        <Chip>{walkthroughs.length}</Chip>
+      </div>
+      {walkthroughs.length === 0 ? (
+        <p class="text-sm text-muted">no walkthroughs for <span class="text-fg">{repo}</span> yet.</p>
+      ) : (
+        <ul class="space-y-1.5 font-mono text-sm">
+          {walkthroughs.map((w) => (
+            <li class="flex items-center justify-between gap-2">
+              <a href={`/walkthroughs/${w.slug}/`} class="truncate hover:text-accent">{w.slug}</a>
+              <span class="text-muted text-xs">{w.wordCount.toLocaleString()}w</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <a href={`/walkthroughs/`} class="brutal-button text-sm mt-4">all walkthroughs →</a>
+    </article>
+  </section>
+
+  <section id="episodes" class="mb-14 scroll-mt-32">
+    <SectionTitle
+      eyebrow="episodes"
+      title="session worknotes"
+      right={`${episodes.length} entr${episodes.length === 1 ? 'y' : 'ies'}`}
+    />
+    {episodes.length === 0 ? (
+      <div class="brutal-card p-6 font-mono text-sm text-muted">
+        no episodes tagged <code>repo: {repo}</code> yet.
+      </div>
+    ) : (
+      <ul class="space-y-3">
+        {episodes.map((e) => {
+          const tags = Array.isArray(e.data.tags) ? (e.data.tags as string[]) : [];
+          const supersededBy = e.data.superseded_by;
+          const distilled = e.data.distilled_into;
+          const stale = (supersededBy && supersededBy !== '~') || (distilled && distilled !== '~');
+          return (
+            <li>
+              <a href={`/episodes/${e.slug}/`} class="brutal-card p-4 no-underline text-fg block">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                  <h3 class="font-mono text-base font-bold tracking-tightish break-all">{e.slug}</h3>
+                  <div class="flex items-baseline gap-2">
+                    {e.data.date && (
+                      <span class="font-mono text-xs text-muted">{formatDate(String(e.data.date))}</span>
+                    )}
+                    {stale && <Chip tone="warn">superseded</Chip>}
+                  </div>
+                </div>
+                {tags.length > 0 && (
+                  <div class="mt-1 flex gap-1.5 flex-wrap">
+                    {tags.slice(0, 6).map((t) => (
+                      <code class="font-mono text-[10px] uppercase tracking-widest text-muted">{t}</code>
+                    ))}
+                  </div>
+                )}
+                <div class="mt-2 font-mono text-xs text-muted">{e.wordCount.toLocaleString()} words</div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </section>
+
+  {drafts.length > 0 && (
+    <section id="drafts" class="mb-14 scroll-mt-32">
+      <SectionTitle
+        eyebrow="drafts"
+        title="essay drafts"
+        right={`${drafts.length} draft${drafts.length === 1 ? '' : 's'} · learn/drafts/`}
+      />
+      <ul class="space-y-3">
+        {drafts.map((d) => (
+          <li>
+            <a href={`/drafts/${d.slug}/`} class="brutal-card p-4 no-underline text-fg block">
+              <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                <h3 class="font-mono text-base font-bold tracking-tightish break-all">{d.slug}</h3>
+                <div class="flex items-baseline gap-2">
+                  {d.data.status && (
+                    <Chip tone={String(d.data.status).includes('partial') ? 'warn' : undefined}>
+                      {String(d.data.status)}
+                    </Chip>
+                  )}
+                  {d.data.last_revised && (
+                    <span class="font-mono text-xs text-muted">{formatDate(String(d.data.last_revised))}</span>
+                  )}
+                </div>
+              </div>
+              <div class="mt-1 font-mono text-xs text-muted">{d.wordCount.toLocaleString()} words</div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  {/* Ask Claude lives in a <details> at the bottom — present for when you want
+      it, hidden by default so it doesn't eat the viewport above every other
+      section. The page used to put this between bedrock and topics and the
+      textarea pushed the actual content out of sight. */}
+  <section class="mb-14">
+    <details class="brutal-card p-0 overflow-hidden">
+      <summary class="cursor-pointer px-5 py-3 list-none flex items-baseline justify-between gap-4 font-mono text-sm border-b-2 border-transparent open:border-border bg-muted-bg">
+        <span class="flex items-baseline gap-3">
+          <span class="text-xs uppercase tracking-widest text-muted">ask claude</span>
+          <span class="text-fg">about this repo</span>
+        </span>
+        <span class="text-muted text-xs">click to open</span>
+      </summary>
+      <div class="p-5">
+        <AskClaude
+          kind="explore"
+          repo={repo}
+          placeholder={`Ask Claude to help you explore ${repo}. e.g., "where does pjit lowering happen?"`}
+          client:load
+        />
+      </div>
+    </details>
+  </section>
+
+  {driftHtml && (
+    <section id="drift" class="mb-14 scroll-mt-32">
+      <SectionTitle eyebrow="drift" title="drift report" right={`.drift-reports/${repo}.md`} />
+      <article class="brutal-card p-6 prose-cartograph" set:html={driftHtml} />
+      <MermaidRehydrator client:visible />
+    </section>
+  )}
+</Base>
