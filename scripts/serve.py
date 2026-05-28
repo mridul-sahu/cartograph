@@ -43,6 +43,8 @@ import signal
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -132,6 +134,251 @@ def _load_dotenv(path: Path) -> None:
 
 
 _load_dotenv(PROJECT_ROOT / "cartograph.env")
+
+# Wall-clock start of this process. With reload on, uvicorn re-execs a fresh
+# worker on each code change, so this naturally reflects the *current* worker's
+# uptime rather than the original launch.
+_PROCESS_START = time.time()
+
+CONFIG_PATH = PROJECT_ROOT / "cartograph.env"
+
+# Curated registry of every user-settable CARTOGRAPH_* variable, surfaced by
+# /api/config and the /settings page. `type` drives the form widget; `applies`
+# is "restart" for keys serve.py reads from its own process env (cartograph.env
+# is loaded once at startup), "immediate" for keys that bash scripts re-source
+# on every run. `readonly` entries are shown for context but never written.
+#
+# Excluded on purpose: CARTOGRAPH_AUTO_DRAFTED (internal marker set by scripts),
+# CARTOGRAPH_WORKSPACE (path footgun — terminal-only).
+CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
+    # --- Identity & GitHub ---
+    {"key": "CARTOGRAPH_GITHUB_USER", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "restart", "required": True,
+     "label": "GitHub user", "help": "GitHub account for forks, PR queries, and git identity."},
+    {"key": "CARTOGRAPH_GIT_USER_NAME", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "immediate", "required": True,
+     "label": "Git user.name", "help": "git user.name written into per-fork .git/config."},
+    {"key": "CARTOGRAPH_GIT_USER_EMAIL", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "immediate", "required": True,
+     "label": "Git user.email", "help": "git user.email for per-fork commits (your open-source identity)."},
+    {"key": "CARTOGRAPH_SSH_HOST_ALIAS", "group": "Identity & GitHub", "type": "string",
+     "default": "github.com", "applies": "immediate",
+     "label": "SSH host alias", "help": "Host alias in fork/upstream URLs (git@<alias>:owner/repo.git)."},
+    {"key": "CARTOGRAPH_SSH_COMMAND", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "immediate",
+     "label": "SSH command", "help": "Explicit core.sshCommand per fork (pins a key). Empty = shell default."},
+    {"key": "CARTOGRAPH_FORBIDDEN_EXTRAS", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "immediate",
+     "label": "Forbidden token extras", "help": "Comma-separated extra forbidden tokens for lint + token-check."},
+    {"key": "CARTOGRAPH_PUBLISH_DEST", "group": "Identity & GitHub", "type": "string",
+     "default": "", "applies": "immediate",
+     "label": "Publish destination", "help": "owner/repo for `just publish`. Empty = <github-user>/cartograph."},
+
+    # --- Auto-curation ---
+    {"key": "CARTOGRAPH_AUTO_PROMOTE", "group": "Auto-curation", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Auto-promote", "help": "Master switch for the episode→topic→bedrock cascade."},
+    {"key": "CARTOGRAPH_AUTO_PROMOTE_EPISODES", "group": "Auto-curation", "type": "int",
+     "default": "3", "applies": "immediate",
+     "label": "Promote: min episodes", "help": "Minimum episodes sharing a tag before topic promotion."},
+    {"key": "CARTOGRAPH_AUTO_PROMOTE_MAX_PER_RUN", "group": "Auto-curation", "type": "int",
+     "default": "2", "applies": "immediate",
+     "label": "Promote: max per run", "help": "Cap on promotions per SessionStart run (token budget)."},
+    {"key": "CARTOGRAPH_AUTO_EPISODE", "group": "Auto-curation", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Auto-episode", "help": "Auto-draft an episode from a session log at Stop."},
+    {"key": "CARTOGRAPH_AUTO_EPISODE_THRESHOLD", "group": "Auto-curation", "type": "int",
+     "default": "3", "applies": "immediate",
+     "label": "Auto-episode threshold", "help": "Minimum edits in a session to trigger an auto-episode."},
+    {"key": "CARTOGRAPH_AUTO_RESEARCH", "group": "Auto-curation", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Auto-research", "help": "Auto-draft a research note from a high-value session."},
+    {"key": "CARTOGRAPH_AUTO_RESEARCH_THRESHOLD", "group": "Auto-curation", "type": "int",
+     "default": "2", "applies": "immediate",
+     "label": "Auto-research threshold", "help": "Minimum research-triggering events to spawn research."},
+    {"key": "CARTOGRAPH_DIGEST_THRESHOLD", "group": "Auto-curation", "type": "int",
+     "default": "3", "applies": "immediate",
+     "label": "Digest threshold", "help": "Min episodes/tag (in lookback) to suggest /promote at SessionStart."},
+    {"key": "CARTOGRAPH_DIGEST_LOOKBACK_DAYS", "group": "Auto-curation", "type": "int",
+     "default": "90", "applies": "immediate",
+     "label": "Digest lookback (days)", "help": "How far back the SessionStart digest scans episodes."},
+
+    # --- Push toggles ---
+    {"key": "CARTOGRAPH_AUTO_REVISE_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Auto-revise push", "help": "0 = auto-revise commits/stages bedrock but does not push."},
+    {"key": "CARTOGRAPH_BACKFILL_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Backfill push", "help": "0 = backfill commits/stages bedrock but does not push."},
+    {"key": "CARTOGRAPH_DRAFT_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Draft push", "help": "0 = episode/research drafts written locally, not pushed."},
+    {"key": "CARTOGRAPH_REVISE_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Revise push", "help": "0 = rejected-topic revisions staged but not pushed."},
+    {"key": "CARTOGRAPH_SESSION_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Session-log push", "help": "0 = session logs written locally, not pushed."},
+    {"key": "CARTOGRAPH_SYNC_PUSH", "group": "Push toggles", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Upstream-sync push", "help": "0 = upstream syncs fetched locally, not pushed to the fork."},
+
+    # --- Queue & tuning ---
+    {"key": "CARTOGRAPH_QUEUE_TOPIC_AGE_DAYS", "group": "Queue & tuning", "type": "int",
+     "default": "90", "applies": "restart",
+     "label": "Topic stale age (days)", "help": "How old a topic gets before it enters the review-debt queue."},
+    {"key": "CARTOGRAPH_QUEUE_LEASE_TTL_MIN", "group": "Queue & tuning", "type": "int",
+     "default": "30", "applies": "immediate",
+     "label": "Queue lease TTL (min)", "help": "TTL for concurrent-work advisory leases on topics."},
+    {"key": "CARTOGRAPH_WORKNOTE_TTL", "group": "Queue & tuning", "type": "int",
+     "default": "30", "applies": "immediate",
+     "label": "Worknote TTL (min)", "help": "Advisory lease duration for concurrent work on a topic slug."},
+    {"key": "CARTOGRAPH_CITE_CAP", "group": "Queue & tuning", "type": "int",
+     "default": "10", "applies": "immediate",
+     "label": "Cite cap", "help": "Max results per content layer in the /cite lookup."},
+
+    # --- Claude invocation flags (advanced) ---
+    {"key": "CARTOGRAPH_ASK_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "restart",
+     "label": "/api/ask flags", "help": "claude -p flags for the AskClaude endpoint. Empty = built-in default."},
+    {"key": "CARTOGRAPH_AUTO_REVISE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "immediate",
+     "label": "auto-revise flags", "help": "claude -p flags for auto-revise runs. Empty = built-in default."},
+    {"key": "CARTOGRAPH_BACKFILL_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "immediate",
+     "label": "backfill flags", "help": "claude -p flags for backfill runs. Empty = built-in default."},
+    {"key": "CARTOGRAPH_FOLD_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "immediate",
+     "label": "fold flags", "help": "claude -p flags for topic→bedrock folding. Empty = built-in default."},
+    {"key": "CARTOGRAPH_PROMOTE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "immediate",
+     "label": "promote flags", "help": "claude -p flags for episode→topic promotion. Empty = built-in default."},
+    {"key": "CARTOGRAPH_REVISE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
+     "default": "", "applies": "immediate",
+     "label": "revise flags", "help": "claude -p flags for rejected-topic revision. Empty = built-in default."},
+
+    # --- Server & runtime ---
+    {"key": "CARTOGRAPH_RELOAD", "group": "Server & runtime", "type": "bool",
+     "default": "1", "applies": "restart",
+     "label": "Auto-reload", "help": "uvicorn auto-reload. Set 0 for a stable PID under a supervisor."},
+    {"key": "CARTOGRAPH_CODE_SERVER_PORT", "group": "Server & runtime", "type": "int",
+     "default": "47780", "applies": "immediate",
+     "label": "code-server port", "help": "Port for the embedded code-server (VS Code) instance."},
+
+    # --- Runtime info (read-only) ---
+    {"key": "CARTOGRAPH_ROOT", "group": "Runtime info", "type": "readonly",
+     "default": str(PROJECT_ROOT), "applies": "restart",
+     "label": "Root", "help": "Cartograph repo root (auto-derived)."},
+    {"key": "CARTOGRAPH_PYTHON", "group": "Runtime info", "type": "readonly",
+     "default": sys.executable, "applies": "restart",
+     "label": "Python", "help": "Interpreter running the server."},
+    {"key": "CARTOGRAPH_SERVER_URL", "group": "Runtime info", "type": "readonly",
+     "default": "http://127.0.0.1:47777", "applies": "restart",
+     "label": "Server URL", "help": "Local API base used by hooks + scripts."},
+)
+
+_CONFIG_SAFE = re.compile(r"^[A-Za-z0-9_./:@,+-]+$")
+
+
+def _config_quote(val: str) -> str:
+    """Render a value for cartograph.env.
+
+    The .env parsers on both sides (this file's ``_load_dotenv`` and
+    ``scripts/lib/load-config.sh``) strip exactly one surrounding quote pair
+    with no escape handling — so wrapping a value in plain double quotes
+    round-trips any inner content (including embedded quotes) faithfully.
+    """
+    if val == "":
+        return ""
+    if _CONFIG_SAFE.match(val):
+        return val
+    return '"' + val + '"'
+
+
+def _read_config_file() -> dict[str, str]:
+    """Parse cartograph.env into {key: value} (same semantics as _load_dotenv)."""
+    out: dict[str, str] = {}
+    if not CONFIG_PATH.exists():
+        return out
+    for raw in CONFIG_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+            val = val[1:-1]
+        out[key] = val
+    return out
+
+
+def _write_config_file(updates: dict[str, str], removals: set[str]) -> list[str]:
+    """Upsert/remove keys in cartograph.env, preserving comments + order.
+
+    Returns the keys actually touched. Writes atomically (temp + os.replace).
+    """
+    existing = CONFIG_PATH.read_text(encoding="utf-8").splitlines() if CONFIG_PATH.exists() else []
+    out_lines: list[str] = []
+    changed: list[str] = []
+    seen: set[str] = set()
+    for raw in existing:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            out_lines.append(raw)
+            continue
+        key = stripped.partition("=")[0].strip()
+        if key in removals:
+            changed.append(key)
+            continue  # drop the line
+        if key in updates:
+            out_lines.append(f"{key}={_config_quote(updates[key])}")
+            seen.add(key)
+            changed.append(key)
+            continue
+        out_lines.append(raw)
+    new_keys = [k for k in updates if k not in seen]
+    if new_keys:
+        # One blank separator before the appended block (collapsed away on
+        # removal since it ends up trailing and gets rstripped). No provenance
+        # header — that would orphan when its keys are later removed.
+        if out_lines and out_lines[-1].strip():
+            out_lines.append("")
+        for k in new_keys:
+            out_lines.append(f"{k}={_config_quote(updates[k])}")
+            changed.append(k)
+    text = "\n".join(out_lines).rstrip("\n") + "\n"
+    fd, tmp = tempfile.mkstemp(dir=str(CONFIG_PATH.parent), prefix=".cartograph.env.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, CONFIG_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return changed
+
+
+def _validate_config_value(entry: dict[str, Any], val: str) -> str | None:
+    """Return an error string if `val` is invalid for `entry`, else None."""
+    if entry.get("required") and val == "":
+        return "value is required"
+    if val == "":
+        return None
+    t = entry["type"]
+    if t == "bool" and val not in ("0", "1"):
+        return "must be 0 or 1"
+    if t == "int":
+        try:
+            int(val)
+        except ValueError:
+            return "must be an integer"
+    if t == "enum" and val not in entry.get("choices", []):
+        return f"must be one of {entry.get('choices', [])}"
+    return None
 
 
 def _cartograph_user() -> str:
@@ -712,6 +959,42 @@ def _doctor() -> dict[str, Any]:
     }
 
 
+def _github_health() -> dict[str, Any]:
+    """Probe GitHub reachability + auth the same way the PR endpoints do.
+
+    Runs a short ``gh api user`` — this is the exact failure surface behind a
+    silently-degraded server (e.g. a process trapped in a network sandbox can
+    serve localhost fine but every ``gh`` child is blocked from the API).
+    """
+    configured = _cartograph_user()
+    base: dict[str, Any] = {
+        "reachable": False,
+        "configured_user": configured,
+        "authed_user": None,
+        "user_mismatch": False,
+        "error": None,
+    }
+    try:
+        r = subprocess.run(  # noqa: S603
+            ["gh", "api", "user", "--jq", ".login"],  # noqa: S607
+            capture_output=True, text=True, timeout=10,
+        )
+    except FileNotFoundError:
+        return {**base, "error": "gh CLI not found on PATH"}
+    except subprocess.TimeoutExpired:
+        return {**base, "error": "gh api user timed out (10s)"}
+    if r.returncode != 0:
+        return {**base, "error": (r.stderr.strip() or f"gh exited {r.returncode}")[:300]}
+    authed = r.stdout.strip()
+    return {
+        "reachable": True,
+        "configured_user": configured,
+        "authed_user": authed,
+        "user_mismatch": bool(configured and authed and configured != authed),
+        "error": None,
+    }
+
+
 def _global_stats() -> dict[str, int]:
     topics_total = sum(_topics_count(r) for r in REPOS)
     walkthroughs_total = sum(1 for _ in (LEARN_DIR / "walkthroughs").glob("*.md")) if (LEARN_DIR / "walkthroughs").exists() else 0
@@ -929,6 +1212,123 @@ def create_app() -> FastAPI:
     @app.get("/api/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/health")
+    def health() -> dict[str, Any]:
+        """Server-process health: pid/uptime/runtime + GitHub connectivity + doctor.
+
+        Distinct from ``/api/status`` (which is repo/content-centric) — this is
+        about the running server itself, and powers the /settings page + the
+        header health dot.
+        """
+        return {
+            "ok": True,
+            "server": {
+                "pid": os.getpid(),
+                "ppid": os.getppid(),
+                "uptime_seconds": round(time.time() - _PROCESS_START, 1),
+                "started_at": datetime.fromtimestamp(_PROCESS_START, tz=timezone.utc).isoformat(),
+                "reload": os.environ.get("CARTOGRAPH_RELOAD", "1") != "0",
+                "python": sys.executable,
+                "cwd": str(Path.cwd()),
+            },
+            "github": _github_health(),
+            "doctor": _doctor(),
+        }
+
+    @app.post("/api/server/restart")
+    def restart_server() -> dict[str, Any]:
+        """Relaunch the server via a detached helper, then return immediately.
+
+        Spawns scripts/restart-server.sh in its own session so it survives the
+        very process it is about to kill: the helper frees :47777 and re-execs
+        serve.py with this interpreter. The client should poll /api/healthz to
+        detect when the new process is up.
+
+        CAVEAT: the relaunched process inherits this process's network context.
+        If the server is trapped inside a network-restricted sandbox, a restart
+        cannot escape it — restart from a terminal instead.
+        """
+        script = PROJECT_ROOT / "scripts" / "restart-server.sh"
+        if not script.is_file():
+            raise HTTPException(status_code=500, detail="scripts/restart-server.sh missing")
+        log_dir = PROJECT_ROOT / ".cartograph" / "state"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = (log_dir / "restart.log").open("ab")
+        subprocess.Popen(  # noqa: S603
+            ["bash", str(script), sys.executable],
+            cwd=str(PROJECT_ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+        return {
+            "ok": True,
+            "restarting": True,
+            "pid": os.getpid(),
+            "hint": "poll /api/healthz; the server returns in a few seconds",
+        }
+
+    @app.get("/api/config")
+    def get_config() -> dict[str, Any]:
+        """Curated CARTOGRAPH_* settings: schema + current values.
+
+        `value` is the cartograph.env value if set, else the live os.environ
+        value (source=env), else the registry default (source=default).
+        """
+        file_vals = _read_config_file()
+        keys_out: list[dict[str, Any]] = []
+        for entry in CONFIG_SCHEMA:
+            key = entry["key"]
+            if key in file_vals:
+                value, source = file_vals[key], "file"
+            elif key in os.environ:
+                value, source = os.environ[key], "env"
+            else:
+                value, source = entry.get("default", ""), "default"
+            keys_out.append({**entry, "value": value, "source": source})
+        groups: list[str] = []
+        for entry in CONFIG_SCHEMA:
+            if entry["group"] not in groups:
+                groups.append(entry["group"])
+        return {"groups": groups, "keys": keys_out, "config_path": "cartograph.env"}
+
+    @app.post("/api/config")
+    def post_config(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
+        """Persist setting changes to cartograph.env.
+
+        Body: ``{updates: {KEY: value}, removals: [KEY]}``. Writes are
+        allow-listed against CONFIG_SCHEMA and type-validated; a single bad
+        value rejects the whole request (400) and leaves the file untouched.
+        """
+        raw_updates = body.get("updates") or {}
+        raw_removals = body.get("removals") or []
+        if not isinstance(raw_updates, dict) or not isinstance(raw_removals, list):
+            raise HTTPException(status_code=400, detail="updates must be an object, removals a list")
+        by_key = {e["key"]: e for e in CONFIG_SCHEMA}
+        editable = {k: e for k, e in by_key.items() if e["type"] != "readonly"}
+        updates: dict[str, str] = {}
+        for key, val in raw_updates.items():
+            entry = editable.get(key)
+            if entry is None:
+                raise HTTPException(status_code=400, detail=f"unknown or read-only key: {key}")
+            sval = "" if val is None else str(val).strip()
+            err = _validate_config_value(entry, sval)
+            if err:
+                raise HTTPException(status_code=400, detail=f"{key}: {err}")
+            updates[key] = sval
+        removals: set[str] = set()
+        for key in raw_removals:
+            if key not in editable:
+                raise HTTPException(status_code=400, detail=f"unknown or read-only key: {key}")
+            removals.add(str(key))
+        overlap = set(updates) & removals
+        if overlap:
+            raise HTTPException(status_code=400, detail=f"key in both updates and removals: {sorted(overlap)}")
+        changed = _write_config_file(updates, removals)
+        restart_required = any(by_key[k].get("applies") == "restart" for k in changed if k in by_key)
+        return {"ok": True, "changed": changed, "restart_required": restart_required}
 
     @app.get("/api/topic/{repo}/{topic}/review")
     def get_review(repo: str, topic: str) -> dict[str, Any]:

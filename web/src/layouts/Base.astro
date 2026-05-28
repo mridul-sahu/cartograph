@@ -2,6 +2,7 @@
 import '~/styles/global.css';
 import ThemeToggle from '~/components/islands/ThemeToggle.tsx';
 import CommandPalette from '~/components/islands/CommandPalette.tsx';
+import ServerHealthDot from '~/components/islands/ServerHealthDot.tsx';
 import KeyboardShortcuts from '~/components/islands/KeyboardShortcuts.tsx';
 import Wordmark from '~/components/Wordmark.astro';
 
@@ -85,6 +86,13 @@ const repos = ['jax', 'xla', 'orbax', 'tunix', 'tokamax'];
           ))}
         </nav>
         <CommandPalette client:load />
+        <ServerHealthDot client:idle />
+        <a
+          href="/settings/"
+          aria-label="settings"
+          title="settings"
+          class={`px-2 py-1.5 font-mono text-sm no-underline ${pathname.startsWith('/settings') ? 'text-accent' : 'text-muted hover:text-fg'}`}
+        >⚙</a>
         <ThemeToggle client:load />
       </div>
 

@@ -123,8 +123,16 @@ export default function PRDashboard() {
         fetch(`/api/prs/${repo}`)
           .then(async (r) => {
             if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-            const j = (await r.json()) as { prs: PR[] };
+            const j = (await r.json()) as { ok?: boolean; prs: PR[]; error?: string };
             if (cancelled) return;
+            // The endpoint returns HTTP 200 with {ok:false, error} when the
+            // underlying `gh` call fails (e.g. can't reach api.github.com).
+            // Without this check that surfaces as an empty "No PRs" section.
+            if (j.ok === false) {
+              const error = (j.error || 'unknown error').replace(/\s+/g, ' ').trim();
+              setByRepo((prev) => ({ ...prev, [repo]: { phase: 'error', error } }));
+              return;
+            }
             const prs = (j.prs || []).map((p) => ({ ...p, repo }));
             setByRepo((prev) => ({ ...prev, [repo]: { phase: 'done', prs } }));
           })
@@ -149,9 +157,20 @@ export default function PRDashboard() {
     all: allKnownPrs.length,
   };
   const loadingCount = Object.values(byRepo).filter((s) => s.phase === 'loading').length;
+  const errored = repos.filter((r) => byRepo[r]?.phase === 'error');
 
   return (
     <div>
+      {errored.length > 0 && (
+        <div className="px-3 py-2 border-b-2 border-border bg-[var(--surface-1)] border-l-4 border-l-[var(--danger)]">
+          <span className="font-mono text-xs text-[var(--danger)] font-bold uppercase tracking-widest">
+            github fetch failed
+          </span>
+          <span className="ml-2 font-mono text-xs text-muted">
+            {errored.length} of {repos.length} repo{errored.length === 1 ? '' : 's'} couldn't load — see the per-repo errors below.
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b-2 border-border bg-[var(--surface-1)] font-mono text-xs">
         <span className="text-muted uppercase tracking-widest mr-1">filter</span>
         {(['open', 'merged', 'closed', 'all'] as Filter[]).map((f) => (

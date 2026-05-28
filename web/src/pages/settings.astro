@@ -1,0 +1,19 @@
+---
+import Base from '~/layouts/Base.astro';
+import SettingsPanel from '~/components/islands/SettingsPanel.tsx';
+---
+
+<Base title="settings" breadcrumbs={[{ label: 'settings' }]}>
+  <section class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
+    <p class="mt-2 text-muted text-base max-w-3xl">
+      Server health and the cartograph configuration. Health (pid, uptime, GitHub
+      connectivity, doctor) is read live; the in-app restart relaunches the server
+      process. Settings persist to <code>cartograph.env</code> — keys tagged
+      <span class="font-mono text-xs">restart</span> only take effect after a restart,
+      since the server reads them once at startup.
+    </p>
+  </section>
+
+  <SettingsPanel client:load />
+</Base>
