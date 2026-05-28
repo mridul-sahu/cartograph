@@ -48,7 +48,10 @@ for d in "$WORKSPACE"/*/; do
   # use `gs repo init --trunk main` which is idempotent.
   trunk="$(git -C "$d" symbolic-ref --short refs/remotes/upstream/HEAD 2>/dev/null | sed 's#^upstream/##')"
   [[ -z "$trunk" ]] && trunk="main"
-  if (cd "$d" && "$GS_BIN" repo init --trunk "$trunk" --remote upstream </dev/null >/dev/null 2>&1); then
+  # Fork workflow needs split remotes: push branches to origin (the fork),
+  # but host trunk and open PRs on upstream. Omitting --upstream makes git-spice
+  # use --remote for both, wrongly pushing submitted branches to upstream.
+  if (cd "$d" && "$GS_BIN" repo init --trunk "$trunk" --remote origin --upstream upstream </dev/null >/dev/null 2>&1); then
     echo "  ✓ initialized $repo (trunk=$trunk)"
     initialized=$((initialized + 1))
   else
