@@ -627,13 +627,42 @@ def _rebuild_worker() -> None:
 _CONTENT_DIRS = ("guides", "episodes", "research", "papers", "learn", "setups", "designs")
 
 # Folders the auto-commit loop watches. Anything that lands under these
-# paths is staged + committed + pushed after a quiet period, so a fresh
-# design or an updated setup script doesn't sit local while the served
-# pages go stale. sessions/ and diary/ are append-only logs that otherwise
-# only commit if the Stop hook fires — this loop guarantees they land even
-# when it doesn't. The remaining content dirs (guides/, episodes/, …) keep
-# their existing per-action flows (auto-promote, auto-revise, review, …).
-_AUTO_COMMIT_DIRS = ("designs", "setups", "sessions", "diary")
+# paths is staged + committed + pushed after a quiet period, so authored
+# content never sits local while the served pages go stale. designs/ and
+# setups/ commit per deliverable sub-folder; every other dir bundles its
+# whole tree into one commit. This covers the dirs whose commits would
+# otherwise depend on a clean Stop hook firing (sessions/, diary/) or a
+# per-action flow (guides/, episodes/, research/, papers/, learn/) — the
+# loop now guarantees all of them land even when neither fires.
+_AUTO_COMMIT_DIRS = (
+    "designs",
+    "setups",
+    "sessions",
+    "diary",
+    "guides",
+    "episodes",
+    "research",
+    "papers",
+    "learn",
+)
+
+# Of the watched dirs, these bundle their whole tree into a single commit
+# (one batch of files → one commit). designs/ and setups/ are the exception:
+# they commit per deliverable sub-folder (see _auto_commit_group_key).
+_AUTO_COMMIT_BUNDLE_DIRS = frozenset(
+    {"sessions", "diary", "guides", "episodes", "research", "papers", "learn"}
+)
+
+# Commit message per bundled dir; falls back to a generic message otherwise.
+_BUNDLE_COMMIT_MESSAGES = {
+    "sessions": "content: session logs",
+    "diary": "content: diary entries",
+    "guides": "content: guide updates",
+    "episodes": "content: episode notes",
+    "research": "content: research notes",
+    "papers": "content: paper notes",
+    "learn": "content: learn updates",
+}
 
 # How long the auto-commit loop waits after the newest modification in a
 # group before committing it. Long enough that a save-edit-save loop
@@ -727,8 +756,8 @@ def _auto_commit_group_key(path: str) -> str | None:
 
     ``designs/<repo>/<slug>/<...>``  → ``designs/<repo>/<slug>``
     ``setups/<repo>/<...>``          → ``setups/<repo>``
-    ``sessions/<...>``               → ``sessions``  (whole dir, one commit)
-    ``diary/<...>``                  → ``diary``     (whole dir, one commit)
+    ``guides/<...>``, ``episodes/<...>``, ``sessions/<...>``, …
+                                     → the top-level dir (whole dir, one commit)
 
     Returns ``None`` for paths outside the watched dirs.
     """
@@ -739,9 +768,9 @@ def _auto_commit_group_key(path: str) -> str | None:
         return "/".join(parts[:3])
     if parts[0] == "setups" and len(parts) >= 2:
         return "/".join(parts[:2])
-    # Append-only logs: bundle everything under the dir into one group so a
-    # batch of new files collapses to a single commit, not one per file.
-    if parts[0] in ("sessions", "diary") and len(parts) >= 2:
+    # Bundle everything under the dir into one group so a batch of new files
+    # collapses to a single commit, not one per file.
+    if parts[0] in _AUTO_COMMIT_BUNDLE_DIRS and len(parts) >= 2:
         return parts[0]
     return None
 
@@ -772,8 +801,8 @@ def _auto_commit_group(group: str, paths: list[str]) -> bool:
             → "content(design): update orbax/safetensors-to-orbax-converter"
         setups/orbax
             → "content(setup): update orbax"
-        sessions  → "content: session logs"
-        diary     → "content: diary entries"
+        episodes  → "content: episode notes"
+        guides    → "content: guide updates"
     """
     if group.startswith("designs/"):
         sub = group[len("designs/"):]
@@ -781,21 +810,17 @@ def _auto_commit_group(group: str, paths: list[str]) -> bool:
     elif group.startswith("setups/"):
         sub = group[len("setups/"):]
         msg = f"content(setup): update {sub}"
-    elif group == "sessions":
-        msg = "content: session logs"
-    elif group == "diary":
-        msg = "content: diary entries"
     else:
-        msg = f"content: update {group}"
+        msg = _BUNDLE_COMMIT_MESSAGES.get(group, f"content: update {group}")
     return _git_publish(paths, msg)
 
 
 def _auto_commit_loop() -> None:
     """Periodically commit + push watched-dir changes after a quiet period.
 
-    Polls ``git status`` for the watched dirs (designs/setups per group,
-    sessions/diary bundled per dir), and commits each group whose newest file
-    has been quiet for at least ``_AUTO_COMMIT_QUIET_SECONDS``. The
+    Polls ``git status`` for the watched dirs (designs/setups per deliverable
+    sub-folder, every other dir bundled per dir), and commits each group whose
+    newest file has been quiet for at least ``_AUTO_COMMIT_QUIET_SECONDS``. The
     quiet-period check lets a save-edit-save loop collapse into one commit
     — a half-written edit won't get pushed mid-keystroke.
 

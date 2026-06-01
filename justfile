@@ -4,11 +4,13 @@ set shell := ["bash", "-cu"]
 # - `just deps`             : install Astro + python deps
 # - `just dev`              : code-server (47780) + Astro dev (4321) + FastAPI dev (47777)
 # - `just build`            : build the static UI under web/dist/
-# - `just up`               : build, start code-server (47780), serve cartograph (47777)
-# - `just serve`            : just the FastAPI server (uses pre-built web/dist/)
+# - `just up`               : build, start code-server (47780), serve cartograph (47777) — all detached
+# - `just serve`            : FastAPI server, detached (idempotent; uses pre-built web/dist/)
+# - `just serve-restart`    : restart the detached FastAPI server (picks up serve.py changes)
+# - `just serve-fg`         : FastAPI server in the foreground (live logs; Ctrl+C to stop)
 # - `just code-server`      : start code-server in the background (idempotent)
 # - `just code-server-stop` : stop code-server
-# - `just down`             : stop code-server (cartograph is foreground — Ctrl+C it)
+# - `just down`             : stop code-server AND the cartograph server
 # - `just add-repo <upstream-org/repo>` : fork-setup + first bedrock backfill
 # - `just backfill <repo>`  : (re-)build bedrock for an already-added repo
 # - `just test`             : run the smoke-test suite (syntax + functional + lint)
@@ -43,11 +45,18 @@ build:
     cd "{{WEB}}" && npm run build
 
 serve:
-    {{PY}} "{{ROOT}}/scripts/serve.py"
+    CARTOGRAPH_PYTHON="{{PY}}" bash "{{ROOT}}/scripts/serve-cartograph.sh"
+
+serve-restart:
+    CARTOGRAPH_PYTHON="{{PY}}" bash "{{ROOT}}/scripts/serve-cartograph.sh" --restart
+
+serve-fg:
+    CARTOGRAPH_PYTHON="{{PY}}" bash "{{ROOT}}/scripts/serve-cartograph.sh" --foreground
 
 up: build code-server serve
 
 down: code-server-stop
+    bash "{{ROOT}}/scripts/serve-cartograph.sh" --stop
 
 # Run the smoke-test suite. Bash syntax check on every .sh, Python compile on
 # every .py, functional smoke tests for doctor/inject-context/publish/lint,
