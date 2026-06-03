@@ -612,19 +612,42 @@ _rebuild_lock = threading.Lock()
 _rebuild_running = False
 _rebuild_pending = False
 
+# Minimum seconds between the END of one build and the START of the next.
+# A burst of content mutations — e.g. the auto-promote fold cascade touching
+# dozens of bedrock files — would otherwise drive back-to-back `npm run build`
+# runs that peg the CPU. The cooldown coalesces every request that lands in
+# the window into a single build. An isolated edit after an idle period still
+# rebuilds immediately (the elapsed time already exceeds the interval).
+# Tune via CARTOGRAPH_BUILD_MIN_INTERVAL (seconds); 0 disables the throttle.
+_REBUILD_MIN_INTERVAL = max(0.0, float(os.environ.get("CARTOGRAPH_BUILD_MIN_INTERVAL", "90")))
+_last_rebuild_finish = 0.0  # time.monotonic() when the last build completed
+
 
 def _rebuild_worker() -> None:
-    global _rebuild_running, _rebuild_pending
+    global _rebuild_running, _rebuild_pending, _last_rebuild_finish
     while True:
+        # Throttle: wait out the cooldown since the last build finished,
+        # coalescing every request that lands during the wait into this one
+        # build. Idle-then-edit pays no wait; a storm collapses to one build
+        # per interval instead of pegging the CPU with back-to-back builds.
+        wait = _REBUILD_MIN_INTERVAL - (time.monotonic() - _last_rebuild_finish)
+        if wait > 0:
+            time.sleep(wait)
+        # Clear pending BEFORE building so a mutation that lands mid-build
+        # re-arms pending and triggers a follow-up build — no lost changes.
+        with _rebuild_lock:
+            _rebuild_pending = False
         _rebuild_site()
+        _last_rebuild_finish = time.monotonic()
         with _rebuild_lock:
             if not _rebuild_pending:
                 _rebuild_running = False
                 return
-            _rebuild_pending = False  # a request arrived mid-build — go again
+            # else: a request arrived during the build — loop; the cooldown
+            # at the top throttles the next run.
 
 
-_CONTENT_DIRS = ("guides", "episodes", "research", "papers", "learn", "setups", "designs")
+_CONTENT_DIRS = ("guides", "episodes", "research", "papers", "learn", "setups", "designs", "proposals")
 
 # Folders the auto-commit loop watches. Anything that lands under these
 # paths is staged + committed + pushed after a quiet period, so authored
@@ -644,13 +667,14 @@ _AUTO_COMMIT_DIRS = (
     "research",
     "papers",
     "learn",
+    "proposals",
 )
 
 # Of the watched dirs, these bundle their whole tree into a single commit
 # (one batch of files → one commit). designs/ and setups/ are the exception:
 # they commit per deliverable sub-folder (see _auto_commit_group_key).
 _AUTO_COMMIT_BUNDLE_DIRS = frozenset(
-    {"sessions", "diary", "guides", "episodes", "research", "papers", "learn"}
+    {"sessions", "diary", "guides", "episodes", "research", "papers", "learn", "proposals"}
 )
 
 # Commit message per bundled dir; falls back to a generic message otherwise.
@@ -662,6 +686,7 @@ _BUNDLE_COMMIT_MESSAGES = {
     "research": "content: research notes",
     "papers": "content: paper notes",
     "learn": "content: learn updates",
+    "proposals": "content: proposal notes",
 }
 
 # How long the auto-commit loop waits after the newest modification in a
@@ -871,9 +896,11 @@ def _request_rebuild() -> None:
 
     Every content mutation (promote, fold, review, mark-trivial, new
     research/episode) leaves ``web/dist/`` stale. This schedules a rebuild
-    on a background thread so the endpoint returns at once. Coalesced: a
-    burst of mutations collapses to at most one in-flight build plus one
-    queued, never a pile-up.
+    on a background thread so the endpoint returns at once. Coalesced and
+    throttled: a burst of mutations collapses to at most one in-flight build
+    plus one queued, and the worker holds off until CARTOGRAPH_BUILD_MIN_INTERVAL
+    has elapsed since the last build (see _rebuild_worker), so a fold storm
+    can't drive back-to-back builds.
     """
     global _rebuild_running, _rebuild_pending
     with _rebuild_lock:
@@ -882,6 +909,54 @@ def _request_rebuild() -> None:
             return
         _rebuild_running = True
     threading.Thread(target=_rebuild_worker, daemon=True).start()
+
+
+def _clear_stale_git_lock() -> None:
+    """Remove a crashed git's orphaned ``.git/index.lock`` so the auto-commit
+    loop self-heals instead of wedging for hours.
+
+    Telling a STALE lock from a LIVE one: a live lock is held *open* by the git
+    process that created it; a stale lock (the process crashed mid-write) has no
+    holder. ``lsof`` reads exactly that. We remove the lock only when BOTH hold:
+
+      - no process currently has the file open (``lsof`` returns nothing), and
+      - it is older than a short grace window (so we never race a git that just
+        grabbed it).
+
+    This is what git's own "a git process may have crashed ... remove the file
+    manually" message describes — done automatically and conservatively. (A real
+    case: a crashed subprocess left a 0-byte lock that blocked every commit for
+    ~51 minutes before anyone noticed.)
+    """
+    lock = PROJECT_ROOT / ".git" / "index.lock"
+    try:
+        age = time.time() - lock.stat().st_mtime
+    except OSError:
+        return  # no lock present
+    try:
+        held = subprocess.run(  # noqa: S603, S607
+            ["lsof", "-t", "--", str(lock)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if held.stdout.strip():
+            return  # a live process owns it — leave it alone
+    except FileNotFoundError:
+        pass  # lsof unavailable — fall back to the age guard alone
+    except subprocess.SubprocessError:
+        return  # can't determine the holder — be conservative
+    if age < 30:
+        return  # too fresh to be certain it's orphaned
+    try:
+        lock.unlink()
+        LOG.warning(
+            "removed stale .git/index.lock (no holder, age %.0fs) — a git "
+            "process had crashed and orphaned it",
+            age,
+        )
+    except OSError:
+        pass
 
 
 def _git_publish(paths: list[str], message: str) -> bool:
@@ -894,6 +969,7 @@ def _git_publish(paths: list[str], message: str) -> bool:
     """
     root = str(PROJECT_ROOT)
     try:
+        _clear_stale_git_lock()
         subprocess.run(  # noqa: S603, S607
             ["git", "add", "--", *paths], cwd=root, timeout=20, check=False
         )
@@ -2499,6 +2575,34 @@ def create_app() -> FastAPI:
         }.get(path.suffix.lower(), "application/octet-stream")
         return FileResponse(path, media_type=media, filename=path.name)
 
+    @app.get("/api/proposal-docx/{repo}/{slug}")
+    def get_proposal_docx(repo: str, slug: str) -> Any:
+        """Serve the finalized proposal deliverable from
+        ``proposals/<repo>/<slug>.docx`` (built by
+        ``proposals/_build/build-proposal-docx.mjs``). ``repo`` may be ``_new``
+        for new-repo proposals, so validation is against the proposals tree
+        rather than REPOS. Path-traversal hardened like get_design_docx.
+        """
+        from fastapi.responses import FileResponse  # noqa: PLC0415
+
+        if "/" in repo or ".." in repo or "/" in slug or ".." in slug:
+            raise HTTPException(status_code=400, detail="invalid path")
+        path = PROJECT_ROOT / "proposals" / repo / f"{slug}.docx"
+        try:
+            path.resolve().relative_to((PROJECT_ROOT / "proposals").resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="path escape") from None
+        if not path.exists() or not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="not built — run: node proposals/_build/build-proposal-docx.mjs <repo> <slug>",
+            )
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=path.name,
+        )
+
     # In-memory IDE state — the Cartograph VS Code extension POSTs the
     # active file here; the /browse sidebar polls GET to stay in sync.
     _ide_state: dict[str, Any] = {"repo": None, "file": None, "line": None, "ts": None}
@@ -2581,6 +2685,8 @@ def create_app() -> FastAPI:
                     "slug": md.stem,
                     "title": title,
                     "repo": fm.get("repo") if isinstance(fm.get("repo"), str) else None,
+                    "rampup": bool(fm.get("rampup")),
+                    "est_minutes": fm.get("est_minutes") if isinstance(fm.get("est_minutes"), int) else None,
                 })
         return {"ok": True, "walkthroughs": out}
 
@@ -2627,7 +2733,9 @@ def create_app() -> FastAPI:
         if cur is not None:
             steps.append(cur)
         for s in steps:
-            s["prose"] = "\n".join(s["prose"]).strip()[:1200]
+            # Full authored prose — the webview scrolls. (Was truncated to
+            # 1200 chars, which chopped steps mid-sentence.)
+            s["prose"] = "\n".join(s["prose"]).strip()
         return {
             "ok": True,
             "slug": slug,
@@ -3089,21 +3197,21 @@ def create_app() -> FastAPI:
             [f"learn/drafts/{slug}.md", f"learn/walkthroughs/{slug}.md"],
             f"chore(walkthrough): promote draft {slug}",
         )
-        rebuilt = _rebuild_site()
+        # Route through the throttled rebuild worker (not a direct
+        # _rebuild_site) so a promotion never bypasses the cooldown that keeps
+        # the build loop from pegging the CPU. The new walkthrough page appears
+        # once the (coalesced) build lands.
+        _request_rebuild()
         return {
             "ok": True,
             "from": f"learn/drafts/{slug}.md",
             "to": f"learn/walkthroughs/{slug}.md",
             "committed": committed,
-            "rebuilt": rebuilt,
+            "rebuild": "queued",
             "note": (
                 "promoted to a walkthrough"
                 + (" · committed + pushed" if committed else "")
-                + (
-                    " · site rebuilt"
-                    if rebuilt
-                    else " · site rebuild FAILED — run `npm run build` in web/"
-                )
+                + " · site rebuild queued"
             ),
         }
 

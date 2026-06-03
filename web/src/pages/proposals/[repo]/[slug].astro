@@ -1,0 +1,215 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
+import BookmarkButton from '~/components/islands/BookmarkButton.tsx';
+import RelatedNotes from '~/components/islands/RelatedNotes.tsx';
+import Backlinks from '~/components/islands/Backlinks.tsx';
+import {
+  loadProposalRepos,
+  loadProposals,
+  loadProposalNote,
+  extractNextAction,
+} from '~/lib/content';
+import { renderMarkdown } from '~/lib/markdown';
+import { formatDate } from '~/lib/time';
+
+export function getStaticPaths() {
+  return loadProposalRepos().flatMap((repo) =>
+    loadProposals(repo).map((p) => ({ params: { repo, slug: p.slug } })),
+  );
+}
+
+const { repo, slug } = Astro.params as { repo: string; slug: string };
+const doc = loadProposalNote(repo, slug);
+if (!doc) {
+  return Astro.redirect('/proposals/');
+}
+
+const { html, headings } = await renderMarkdown(doc.body);
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const tags = Array.isArray(doc.data.tags) ? (doc.data.tags as string[]) : [];
+const sources = Array.isArray(doc.data.sources) ? (doc.data.sources as string[]) : [];
+const nextAction = extractNextAction(doc.body);
+const notePath = `proposals/${repo}/${slug}.md`;
+const repoLabel = repo === '_new' ? 'new repo' : repo;
+
+const siblings = loadProposals(repo);
+const idx = siblings.findIndex((s) => s.slug === slug);
+const prev = idx > 0 ? siblings[idx - 1] : null;
+const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+
+const statusClass: Record<string, string> = {
+  greenlit: 'text-green-700 border-green-600',
+  draft: 'text-muted border-border',
+  parked: 'text-amber-700 border-amber-600',
+  superseded: 'text-muted border-border',
+};
+
+// Design-doc deliverable (docx) for greenlit proposals, surfaced if present.
+const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
+---
+
+<Base
+  title={`proposal · ${repoLabel} · ${slug}`}
+  breadcrumbs={[
+    { label: 'dashboard', href: '/' },
+    { label: 'proposals', href: '/proposals/' },
+    { label: repoLabel },
+    { label: slug },
+  ]}
+>
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-10">
+    <article class="min-w-0">
+      <header class="mb-6">
+        <div class="font-mono text-xs text-muted uppercase tracking-widest mb-2 flex items-center gap-3 flex-wrap">
+          <span>proposal</span>
+          <span class="text-border">·</span>
+          <span class={repo === '_new' ? 'text-accent' : ''}>{repoLabel}</span>
+          <span class={`border px-1.5 py-0.5 ${statusClass[doc.status] ?? statusClass.draft}`}>{doc.status}</span>
+          <Chip>strategic</Chip>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tightish break-words">{doc.title}</h1>
+        {doc.data.last_revised && (
+          <p class="mt-2 font-mono text-xs text-muted">revised {formatDate(String(doc.data.last_revised))}</p>
+        )}
+      </header>
+
+      {nextAction && (nextAction.commands.length > 0 || nextAction.links.length > 0) && (
+        <div class="brutal-card p-5 mb-8 border-accent">
+          <h2 class="font-mono text-xs uppercase tracking-widest text-accent mb-3">▶ next action</h2>
+          {nextAction.commands.length > 0 && (
+            <div class="space-y-2 mb-3">
+              {nextAction.commands.map((cmd) => (
+                <div class="flex items-stretch gap-2">
+                  <code class="flex-1 min-w-0 break-all bg-muted-bg border-2 border-border px-2 py-1.5 font-mono text-xs">{cmd}</code>
+                  <button
+                    type="button"
+                    data-cmd={cmd}
+                    class="copy-cmd flex-shrink-0 font-mono text-[11px] uppercase tracking-wider px-3 border-2 border-border bg-accent text-accent-fg hover:opacity-90"
+                  >copy</button>
+                </div>
+              ))}
+              <p class="font-mono text-[10px] text-muted">copy → paste into Claude Code to run</p>
+            </div>
+          )}
+          {nextAction.links.length > 0 && (
+            <div class="flex flex-wrap gap-2">
+              {nextAction.links.map((url) => (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-mono text-[11px] px-2 py-1 border-2 border-border bg-bg text-fg no-underline hover:border-accent break-all"
+                >{url} ↗</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div class="prose-cartograph" set:html={html} />
+
+      {(prev || next) && (
+        <nav class="mt-16 grid grid-cols-2 gap-4 border-t-2 border-border pt-6">
+          {prev ? (
+            <a href={`/proposals/${repo}/${prev.slug}/`} class="brutal-card p-4 no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">← newer</div>
+              <div class="font-mono mt-1 truncate">{prev.slug}</div>
+            </a>
+          ) : <span />}
+          {next ? (
+            <a href={`/proposals/${repo}/${next.slug}/`} class="brutal-card p-4 text-right no-underline">
+              <div class="font-mono text-xs text-muted uppercase tracking-widest">older →</div>
+              <div class="font-mono mt-1 truncate">{next.slug}</div>
+            </a>
+          ) : <span />}
+        </nav>
+      )}
+    </article>
+
+    <aside class="lg:sticky lg:top-32 self-start space-y-6 text-sm">
+      {doc.hasDocx && (
+        <a href={docxUrl} class="brutal-card p-4 block no-underline border-accent hover:opacity-90">
+          <div class="font-mono text-xs uppercase tracking-widest text-accent mb-1">download docx ↓</div>
+          <div class="font-mono text-[10px] text-muted">the formatted proposal deliverable</div>
+        </a>
+      )}
+
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">pin</h3>
+        <BookmarkButton path={notePath} title={slug} client:load />
+      </div>
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">related</h3>
+        <RelatedNotes path={notePath} client:visible />
+      </div>
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">backlinks</h3>
+        <Backlinks path={notePath} client:visible />
+      </div>
+
+      <div class="brutal-card p-4">
+        <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">frontmatter</h3>
+        <dl class="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1.5 font-mono text-xs">
+          <dt class="text-muted">target</dt><dd>{repoLabel}</dd>
+          <dt class="text-muted">slug</dt><dd class="break-all">{slug}</dd>
+          <dt class="text-muted">status</dt><dd>{doc.status}</dd>
+          {doc.data.last_revised && (<><dt class="text-muted">revised</dt><dd>{formatDate(String(doc.data.last_revised))}</dd></>)}
+          <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
+          {tags.length > 0 && (
+            <>
+              <dt class="text-muted">tags</dt>
+              <dd class="flex flex-wrap gap-1">{tags.map((t) => <code class="text-fg">{t}</code>)}</dd>
+            </>
+          )}
+        </dl>
+      </div>
+
+      {sources.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-2">sources</h3>
+          <ul class="space-y-1 font-mono text-xs">
+            {sources.map((s) => {
+              const isUrl = /^https?:/.test(s);
+              return (
+                <li class="break-all">
+                  {isUrl ? (
+                    <a href={s} target="_blank" rel="noopener noreferrer" class="text-muted hover:text-accent">{s}</a>
+                  ) : <span class="text-muted">{s}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {tocHeadings.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">on this page</h3>
+          <ul class="space-y-1.5 text-sm">
+            {tocHeadings.map((h) => (
+              <li class={h.depth === 3 ? 'pl-3 text-muted' : ''}>
+                <a href={`#${h.id}`} class="hover:text-accent">{h.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </aside>
+  </div>
+
+  <MermaidRehydrator client:visible />
+  <script is:inline>
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.copy-cmd');
+      if (!btn) return;
+      const cmd = btn.getAttribute('data-cmd') || '';
+      navigator.clipboard.writeText(cmd).then(() => {
+        const prev = btn.textContent;
+        btn.textContent = 'copied!';
+        setTimeout(() => { btn.textContent = prev; }, 1200);
+      }).catch(() => {});
+    });
+  </script>
+</Base>

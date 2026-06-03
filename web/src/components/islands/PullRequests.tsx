@@ -7,6 +7,7 @@
 // This is read-only — no PR creation yet (the user creates PRs via
 // `cgh pr create` from the terminal so the token-check hook fires).
 import { useEffect, useState } from 'react';
+import { REPOS } from '~/lib/repos';
 
 interface PR {
   number: number;
@@ -27,8 +28,6 @@ interface RepoPRs {
   count?: number;
   error?: string;
 }
-
-const REPOS = ['jax', 'xla', 'orbax', 'tunix', 'tokamax'];
 
 type State =
   | { kind: 'loading' }

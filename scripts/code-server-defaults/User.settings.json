@@ -79,6 +79,16 @@
   "python.analysis.userFileIndexingLimit": 2000,
   "python.languageServer": "None",
   "python.terminal.activateEnvironment": false,
+  "//py": "Lint with pylint from the torch pyenv env, which has pylint==4.0.5",
+  "//py2": "+ the pylint_per_file_ignores plugin that orbax/.pylintrc loads. The",
+  "//py3": "Python extension auto-selects each repo's .venv (e.g. orbax/.venv-jax),",
+  "//py4": "which lacks the plugin -> E0013. interpreter pin forces torch for the",
+  "//py5": "linter regardless of the auto-selected venv.",
+  "python.defaultInterpreterPath": "<home>/.pyenv/versions/torch/bin/python",
+  "pylint.importStrategy": "fromEnvironment",
+  "pylint.interpreter": [
+    "<home>/.pyenv/versions/torch/bin/python"
+  ],
   "//5": "git status on a huge working tree is a recurring stutter.",
   "git.autorefresh": false,
   "git.autofetch": false,

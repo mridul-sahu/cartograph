@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "dev": "node scripts/gen-repos.mjs && astro dev",
+    "build": "node scripts/gen-repos.mjs && astro build",
+    "gen-repos": "node scripts/gen-repos.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },

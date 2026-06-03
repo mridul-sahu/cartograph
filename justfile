@@ -106,3 +106,11 @@ add-repo upstream:
 backfill repo:
     bash "{{ROOT}}/scripts/backfill-bedrock.sh" "{{repo}}"
 
+# Build the docx deliverable for a finalized proposal — design-doc look-and-feel,
+# investment-case content. Output: proposals/<repo>/<slug>.docx (served at
+# /api/proposal-docx/<repo>/<slug> and offered as a download once status: greenlit).
+#   just proposal-docx _new jax-rlvr-verifiers
+proposal-docx repo slug:
+    cd "{{ROOT}}/proposals/_build" && [ -d node_modules ] || npm install
+    node "{{ROOT}}/proposals/_build/build-proposal-docx.mjs" "{{repo}}" "{{slug}}"
+

@@ -27,6 +27,7 @@
     "commands": [
       { "command": "cartograph.ask", "title": "Cartograph: Ask Claude about selection" },
       { "command": "cartograph.explainFile", "title": "Cartograph: Explain this file" },
+      { "command": "cartograph.rampUp", "title": "Cartograph: Ramp up on a repo (guided tour)" },
       { "command": "cartograph.startTour", "title": "Cartograph: Start a walkthrough tour" },
       { "command": "cartograph.tourNext", "title": "Cartograph: Tour — next step" },
       { "command": "cartograph.tourPrev", "title": "Cartograph: Tour — previous step" },
@@ -52,6 +53,13 @@
         "mac": "cmd+shift+k",
         "win": "ctrl+shift+k",
         "linux": "ctrl+shift+k"
+      },
+      {
+        "command": "cartograph.rampUp",
+        "key": "cmd+shift+r",
+        "mac": "cmd+shift+r",
+        "win": "ctrl+shift+r",
+        "linux": "ctrl+shift+r"
       }
     ],
     "viewsContainers": {

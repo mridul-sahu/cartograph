@@ -5,6 +5,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import matter from 'gray-matter';
+import { REPOS } from './repos';
 
 const PROJECT_ROOT = join(import.meta.dirname ?? new URL('.', import.meta.url).pathname, '..', '..', '..');
 const GUIDES = join(PROJECT_ROOT, 'guides');
@@ -13,6 +14,7 @@ const RESEARCH = join(PROJECT_ROOT, 'research');
 const PAPERS = join(PROJECT_ROOT, 'papers');
 const SETUPS = join(PROJECT_ROOT, 'setups');
 const DESIGNS = join(PROJECT_ROOT, 'designs');
+const PROPOSALS = join(PROJECT_ROOT, 'proposals');
 const DRIFT = join(PROJECT_ROOT, '.drift-reports');
 
 export interface MarkdownDoc {
@@ -354,6 +356,7 @@ export function artifactUrl(path: string): string | null {
   let m: RegExpExecArray | null;
   if ((m = /^episodes\/[^/]+\/([^/]+)\.md$/.exec(path))) return `/episodes/${m[1]}/`;
   if ((m = /^research\/([^/]+)\/([^/]+)\.md$/.exec(path))) return `/research/${m[1]}/${m[2]}/`;
+  if ((m = /^proposals\/([^/]+)\/([^/]+)\.md$/.exec(path))) return `/proposals/${m[1]}/${m[2]}/`;
   if ((m = /^papers\/([^/]+)\/([^/]+)\/notes\.md$/.exec(path))) return `/papers/${m[1]}/${m[2]}/`;
   if ((m = /^guides\/([^/]+)\/topics\/([^/]+)\.md$/.exec(path))) return `/repo/${m[1]}/topics/${m[2]}/`;
   if ((m = /^guides\/([^/]+)\/(overview|architecture|conventions)\.md$/.exec(path)))
@@ -481,6 +484,99 @@ export function loadAllResearch(): MarkdownDoc[] {
   );
 }
 
+// ── proposals — ambitious, investment-cased build plans ──────────────────
+//
+// proposals/<repo|_new>/<slug>.md — the strategic layer above designs.
+// `_new` is the pseudo-repo for proposals that warrant a brand-new repo.
+
+export interface ProposalDoc extends MarkdownDoc {
+  repo: string;          // real repo, or "_new"
+  status: string;        // draft | greenlit | parked | superseded
+  title: string;         // first H1, fallback slug
+  pitch: string;         // first paragraph under the "## Pitch" heading
+  hasDocx: boolean;      // a built proposal.docx sits next to the note
+}
+
+// The actionable "## Next action" section, parsed for the UI: copyable slash
+// commands (inline-code spans starting with `/`) and any URLs.
+export interface NextAction {
+  commands: string[];
+  links: string[];
+  text: string;
+}
+
+// Capture a "## <heading>" section body, up to the next "## " heading or EOF.
+// We prefix a newline so a heading at the very start still matches, and avoid
+// the `m`-flag `$` (which matches every line end) by anchoring on `\n##`.
+function sectionBody(body: string, heading: string): string {
+  const re = new RegExp(`\\n##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`);
+  const m = re.exec('\n' + body);
+  return m ? m[1] : '';
+}
+
+export function extractNextAction(body: string): NextAction | null {
+  const section = sectionBody(body, 'Next action');
+  if (!section) return null;
+  // Collapse soft line-breaks inside the backtick span — a wrapped command must
+  // copy as one clean line.
+  const commands = Array.from(section.matchAll(/`(\/[^`]+)`/g)).map((x) => x[1].replace(/\s+/g, ' ').trim());
+  const links = Array.from(section.matchAll(/https?:\/\/[^\s)`>"']+/g)).map((x) => x[0]);
+  const text = section.trim();
+  if (!commands.length && !links.length && !text) return null;
+  return { commands, links, text };
+}
+
+function firstSection(body: string, heading: string): string {
+  return sectionBody(body, heading)
+    .split(/\n/).map((l) => l.trim()).filter(Boolean)[0] ?? '';
+}
+
+function toProposalDoc(doc: MarkdownDoc, repo: string): ProposalDoc {
+  return {
+    ...doc,
+    repo: typeof doc.data.repo === 'string' ? doc.data.repo : repo,
+    status: typeof doc.data.status === 'string' ? doc.data.status : 'draft',
+    title: firstHeading(doc.body) ?? doc.slug,
+    pitch: firstSection(doc.body, 'Pitch'),
+    hasDocx: existsSync(doc.path.replace(/\.md$/, '.docx')),
+  };
+}
+
+// The proposal "repos" are the subdirectories of proposals/ (real repos + _new),
+// excluding the top-level README.
+export function loadProposalRepos(): string[] {
+  if (!existsSync(PROPOSALS)) return [];
+  return readdirSync(PROPOSALS)
+    .filter((entry) => {
+      if (entry.startsWith('.')) return false;
+      try { return statSync(join(PROPOSALS, entry)).isDirectory(); } catch { return false; }
+    })
+    .sort();
+}
+
+export function loadProposals(repo: string): ProposalDoc[] {
+  return listMarkdown(join(PROPOSALS, repo))
+    .map(loadFile)
+    .filter((d): d is MarkdownDoc => d !== null)
+    .map((d) => toProposalDoc(d, repo))
+    .sort((a, b) =>
+      String(b.data.last_revised ?? '').localeCompare(String(a.data.last_revised ?? '')),
+    );
+}
+
+export function loadProposalNote(repo: string, slug: string): ProposalDoc | null {
+  const doc = loadFile(join(PROPOSALS, repo, `${slug}.md`));
+  return doc ? toProposalDoc(doc, repo) : null;
+}
+
+export function loadAllProposals(): ProposalDoc[] {
+  return loadProposalRepos()
+    .flatMap((repo) => loadProposals(repo))
+    .sort((a, b) =>
+      String(b.data.last_revised ?? '').localeCompare(String(a.data.last_revised ?? '')),
+    );
+}
+
 export function loadDriftReport(repo: string): string | null {
   const path = join(DRIFT, `${repo}.md`);
   if (!existsSync(path)) return null;
@@ -493,7 +589,7 @@ export function loadDriftReport(repo: string): string | null {
 
 export function countAll() {
   return {
-    topics: ['jax', 'xla', 'orbax', 'tunix', 'tokamax']
+    topics: [...REPOS]
       .map((r) => loadTopics(r).length)
       .reduce((a, b) => a + b, 0),
     walkthroughs: loadAllWalkthroughs().length,
@@ -663,14 +759,15 @@ export interface CrossRef {
   path: string;
 }
 
-const KNOWN_REPOS = ['jax', 'xla', 'orbax', 'tunix', 'tokamax'] as const;
+const KNOWN_REPOS = REPOS;
 
 export function loadCrossRefs(): CrossRef[] {
   const refs: CrossRef[] = [];
   // Match `<repo>/<path>` where path looks like a real file/dir reference.
   // We keep matches conservative — must contain a `/` after the repo name, and
   // path must look like code (alnum, _, -, /, ., :, digits for line refs).
-  const pathRe = /\b(jax|xla|orbax|tunix|tokamax)\/([a-zA-Z0-9_./:-]{2,}?)(?=[\s)`'",.;]|$)/g;
+  const repoAlt = KNOWN_REPOS.join('|');
+  const pathRe = new RegExp(`\\b(${repoAlt})/([a-zA-Z0-9_./:-]{2,}?)(?=[\\s)\`'",.;]|$)`, 'g');
   for (const repo of KNOWN_REPOS) {
     for (const topic of loadTopics(repo)) {
       const seen = new Set<string>();

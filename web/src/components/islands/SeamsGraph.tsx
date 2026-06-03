@@ -10,6 +10,7 @@
 // - Hovering a node highlights its outgoing edges in the accent color.
 // - All animations gated on `prefers-reduced-motion`.
 import { useMemo, useState, useCallback } from 'react';
+import { REPOS } from '~/lib/repos';
 import ReactFlow, {
   Background,
   Controls,
@@ -36,7 +37,7 @@ interface NodeData {
   hoveredOutgoing?: boolean;
 }
 
-const TRACKED = new Set(['jax', 'xla', 'orbax', 'tunix', 'tokamax']);
+const TRACKED = new Set<string>(REPOS);
 
 // Custom node: brutalist rect with optional accent fill.
 function RepoNode({ data }: NodeProps<NodeData>) {

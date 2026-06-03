@@ -1,0 +1,75 @@
+---
+import Base from '~/layouts/Base.astro';
+import Chip from '~/components/Chip.astro';
+import { loadProposalRepos, loadProposals, type ProposalDoc } from '~/lib/content';
+import { formatDate } from '~/lib/time';
+
+const repos = loadProposalRepos();
+const byRepo = repos
+  .map((repo) => ({ repo, items: loadProposals(repo) }))
+  .filter((g) => g.items.length > 0)
+  // `_new` (new-repo proposals) first, then alphabetical.
+  .sort((a, b) => (a.repo === '_new' ? -1 : b.repo === '_new' ? 1 : a.repo.localeCompare(b.repo)));
+
+const total = byRepo.reduce((n, g) => n + g.items.length, 0);
+
+const statusClass: Record<string, string> = {
+  greenlit: 'text-green-700 border-green-600',
+  draft: 'text-muted border-border',
+  parked: 'text-amber-700 border-amber-600',
+  superseded: 'text-muted border-border line-through',
+};
+
+function repoLabel(repo: string): string {
+  return repo === '_new' ? 'new repo' : repo;
+}
+---
+
+<Base
+  title="proposals"
+  description="ambitious, investment-cased build plans"
+  breadcrumbs={[{ label: 'dashboard', href: '/' }, { label: 'proposals' }]}
+>
+  <header class="mb-8">
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tightish font-mono">proposals</h1>
+    <p class="mt-2 text-muted max-w-2xl">
+      The strategic layer above designs — what to build, why it's worth investing
+      in, and where it should live. Grounded in gap research + paper analysis +
+      ecosystem trends. A greenlit proposal flows into a formal design doc.
+    </p>
+    <p class="mt-1 font-mono text-xs text-muted">{total} proposal{total === 1 ? '' : 's'} · {byRepo.length} target{byRepo.length === 1 ? '' : 's'}</p>
+  </header>
+
+  {total === 0 ? (
+    <div class="brutal-card p-8 text-center text-muted font-mono text-sm">
+      no proposals yet — run <code class="text-fg">/propose &lt;repo|new&gt; &lt;slug&gt; &lt;theme&gt;</code>
+    </div>
+  ) : (
+    <div class="space-y-10">
+      {byRepo.map((group) => (
+        <section>
+          <h2 class="font-mono text-xs uppercase tracking-widest text-muted mb-3 flex items-center gap-2">
+            <span class={group.repo === '_new' ? 'text-accent' : ''}>{repoLabel(group.repo)}</span>
+            <span class="text-border">·</span>
+            <span>{group.items.length}</span>
+          </h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {group.items.map((p: ProposalDoc) => (
+              <a href={`/proposals/${group.repo}/${p.slug}/`} class="brutal-card p-5 no-underline block hover:border-accent transition-colors">
+                <div class="flex items-center justify-between gap-3 mb-2">
+                  <span class={`font-mono text-[10px] uppercase tracking-widest border px-1.5 py-0.5 ${statusClass[p.status] ?? statusClass.draft}`}>{p.status}</span>
+                  {p.data.last_revised && (
+                    <span class="font-mono text-xs text-muted">{formatDate(String(p.data.last_revised))}</span>
+                  )}
+                </div>
+                <h3 class="font-bold text-lg leading-snug break-words">{p.title}</h3>
+                {p.pitch && <p class="mt-2 text-sm text-muted line-clamp-3">{p.pitch}</p>}
+                <div class="mt-3 font-mono text-[11px] text-muted truncate">{group.repo}/{p.slug}</div>
+              </a>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )}
+</Base>

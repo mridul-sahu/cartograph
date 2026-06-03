@@ -14,6 +14,7 @@
 // Per claude-designs/cartograph/ui-audit-2026-05-25/ L1.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { REPOS } from '~/lib/repos';
 
 interface Hit {
   path: string;
@@ -53,7 +54,7 @@ const STATIC_COMMANDS: Command[] = [
   { id: 'nav-library', group: 'navigate', label: 'Library', hint: '/library/', run: () => { location.href = '/library/'; } },
   { id: 'nav-seams', group: 'navigate', label: 'Seams', hint: '/seams/', run: () => { location.href = '/seams/'; } },
   { id: 'nav-console', group: 'navigate', label: 'Console', hint: '/console/', run: () => { location.href = '/console/'; } },
-  ...['jax', 'xla', 'orbax', 'tunix', 'tokamax'].flatMap((r) => [
+  ...REPOS.flatMap((r) => [
     { id: `nav-repo-${r}`, group: 'navigate' as const, label: `Repo: ${r}`, hint: `/repo/${r}/`, run: () => { location.href = `/repo/${r}/`; } },
     { id: `nav-stack-${r}`, group: 'navigate' as const, label: `Stack: ${r}`, hint: `/repo/${r}/stack/`, run: () => { location.href = `/repo/${r}/stack/`; } },
   ]),

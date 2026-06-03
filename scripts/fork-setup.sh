@@ -68,7 +68,9 @@ git config commit.gpgsign   false
 git config pull.rebase      true
 git config --unset-all commit.template 2>/dev/null || true
 
-# 5. Add upstream remote (idempotent).
+# 5. Reconcile remotes (idempotent). origin always exists post-clone, so
+# set-url keeps it correct on re-runs where the host alias changed.
+git remote set-url origin "$ORIGIN_URL"
 if git remote get-url upstream >/dev/null 2>&1; then
   git remote set-url upstream "$UPSTREAM_URL"
 else
@@ -94,11 +96,13 @@ if [[ -n "${CARTOGRAPH_FORBIDDEN_EXTRAS:-}" ]]; then
 fi
 
 render_hook() {  # $1 = source path, $2 = dest path
-  sed -e "s|__GITHUB_USER__|$CARTOGRAPH_GITHUB_USER|g" \
-      -e "s|__GIT_EMAIL__|$CARTOGRAPH_GIT_USER_EMAIL|g" \
-      -e "s|__SSH_HOST_ALIAS__|$CARTOGRAPH_SSH_HOST_ALIAS|g" \
-      -e "s|__FORBIDDEN_REGEX__|$forbidden_regex|g" \
-      -e "s|__COAUTHOR_REGEX__|$coauthor_regex|g" \
+  # Delimiter is '#' not '|': the forbidden/coauthor regexes contain '|'
+  # alternations, which would otherwise terminate an "s|...|...|" replacement.
+  sed -e "s#__GITHUB_USER__#$CARTOGRAPH_GITHUB_USER#g" \
+      -e "s#__GIT_EMAIL__#$CARTOGRAPH_GIT_USER_EMAIL#g" \
+      -e "s#__SSH_HOST_ALIAS__#$CARTOGRAPH_SSH_HOST_ALIAS#g" \
+      -e "s#__FORBIDDEN_REGEX__#$forbidden_regex#g" \
+      -e "s#__COAUTHOR_REGEX__#$coauthor_regex#g" \
       "$1" > "$2"
   chmod 0755 "$2"
 }

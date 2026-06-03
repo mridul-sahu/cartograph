@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 import * as http from 'node:http';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 // ── API client ──────────────────────────────────────────────────────────
 
@@ -511,35 +512,68 @@ interface WalkStep {
 interface WalkResponse {
   ok: boolean;
   slug: string;
+  repo?: string | null;
   steps: WalkStep[];
 }
 
-let tour: { slug: string; steps: WalkStep[]; idx: number; panel: vscode.WebviewPanel } | undefined;
+interface WalkMeta {
+  slug: string;
+  title: string;
+  repo: string | null;
+  rampup: boolean;
+  est_minutes: number | null;
+}
 
-async function startTour(ctx: WorkspaceCtx): Promise<void> {
-  let slugs: string[] = [];
+let tour:
+  | {
+      slug: string;
+      title: string;
+      repo: string | null;
+      rampup: boolean;
+      estMinutes: number | null;
+      steps: WalkStep[];
+      idx: number;
+      panel: vscode.WebviewPanel;
+    }
+  | undefined;
+
+async function pickWalkthrough(rampOnly: boolean): Promise<WalkMeta | undefined> {
+  let metas: WalkMeta[] = [];
   try {
-    const idx = await apiGet<{ walkthroughs?: { slug: string }[] }>(
-      '/api/walkthroughs',
-    ).catch(() => null);
-    if (idx?.walkthroughs) slugs = idx.walkthroughs.map((w) => w.slug);
+    const idx = await apiGet<{ walkthroughs?: WalkMeta[] }>('/api/walkthroughs').catch(() => null);
+    if (idx?.walkthroughs) metas = idx.walkthroughs;
   } catch {
     /* fall through */
   }
-  let slug: string | undefined;
-  if (slugs.length > 0) {
-    slug = await vscode.window.showQuickPick(slugs, {
-      placeHolder: 'pick a walkthrough to tour',
-    });
-  } else {
-    slug = await vscode.window.showInputBox({
-      prompt: 'walkthrough slug (e.g. ecosystem-jax-orbax-tunix-tokamax)',
-    });
+  if (rampOnly) metas = metas.filter((m) => m.rampup);
+  if (metas.length === 0) {
+    if (rampOnly) {
+      vscode.window.showWarningMessage(
+        'Cartograph: no ramp-up tours yet (need learn/walkthroughs/<repo>-rampup.md with `rampup: true`).',
+      );
+      return undefined;
+    }
+    const slug = await vscode.window.showInputBox({ prompt: 'walkthrough slug' });
+    return slug ? { slug, title: slug, repo: null, rampup: false, est_minutes: null } : undefined;
   }
-  if (!slug) return;
+  const pick = await vscode.window.showQuickPick(
+    metas
+      .sort((a, b) => (a.repo ?? '').localeCompare(b.repo ?? ''))
+      .map((m) => ({
+        label: rampOnly && m.repo ? `Ramp up on ${m.repo}` : m.title,
+        description: m.est_minutes ? `~${m.est_minutes} min` : m.repo ?? undefined,
+        detail: m.slug,
+        meta: m,
+      })),
+    { placeHolder: rampOnly ? 'pick a repo to ramp up on' : 'pick a walkthrough to tour' },
+  );
+  return pick?.meta;
+}
+
+async function launchTour(ctx: WorkspaceCtx, meta: WalkMeta): Promise<void> {
   let resp: WalkResponse;
   try {
-    resp = await apiGet<WalkResponse>(`/api/walkthrough-steps/${slug}`);
+    resp = await apiGet<WalkResponse>(`/api/walkthrough-steps/${meta.slug}`);
   } catch (e) {
     vscode.window.showErrorMessage(`Cartograph: ${e}`);
     return;
@@ -548,119 +582,261 @@ async function startTour(ctx: WorkspaceCtx): Promise<void> {
     vscode.window.showWarningMessage('Cartograph: that walkthrough has no steppable sections.');
     return;
   }
+  if (tour) {
+    tour.panel.dispose();
+    tour = undefined;
+  }
+  const label = meta.rampup ? `ramp-up · ${meta.repo ?? meta.slug}` : `tour · ${meta.slug}`;
   const wp = vscode.window.createWebviewPanel(
     'cartograph.tour',
-    `tour · ${slug}`,
+    label,
     vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true },
   );
   wp.webview.onDidReceiveMessage((m) => {
-    if (m?.cmd === 'next') stepTour(ctx, +1);
-    else if (m?.cmd === 'prev') stepTour(ctx, -1);
-    else if (m?.cmd === 'goto' && typeof m.idx === 'number') {
-      if (tour) tour.idx = m.idx - 1;
-      stepTour(ctx, +1);
+    if (!m) return;
+    if (m.cmd === 'next') void stepTour(ctx, +1);
+    else if (m.cmd === 'prev') void stepTour(ctx, -1);
+    else if (m.cmd === 'goto' && typeof m.idx === 'number') void gotoStep(ctx, m.idx);
+    else if (m.cmd === 'reveal' && tour) void jumpToStep(ctx, tour.steps[tour.idx]);
+    else if (m.cmd === 'ask' && tour) {
+      const s = tour.steps[tour.idx];
+      void askClaude(
+        ctx,
+        'explore',
+        `In the context of this ramp-up step ("${s.heading}"), explain what is happening and why it matters.`,
+        s.file ?? '',
+      );
+    } else if (m.cmd === 'browser') {
+      void openDashboardUrl(`${apiBase()}/walkthroughs/${meta.slug}/`);
     }
   });
   wp.onDidDispose(() => {
     tour = undefined;
   });
-  tour = { slug, steps: resp.steps, idx: -1, panel: wp };
-  stepTour(ctx, +1);
+  tour = {
+    slug: meta.slug,
+    title: meta.title,
+    repo: meta.repo ?? resp.repo ?? null,
+    rampup: meta.rampup,
+    estMinutes: meta.est_minutes,
+    steps: resp.steps,
+    idx: 0,
+    panel: wp,
+  };
+  await gotoStep(ctx, 0);
+}
+
+async function startTour(ctx: WorkspaceCtx): Promise<void> {
+  const meta = await pickWalkthrough(false);
+  if (meta) await launchTour(ctx, meta);
+}
+
+async function startRampUp(ctx: WorkspaceCtx): Promise<void> {
+  const meta = await pickWalkthrough(true);
+  if (meta) await launchTour(ctx, meta);
+}
+
+async function gotoStep(ctx: WorkspaceCtx, index: number): Promise<void> {
+  if (!tour) return;
+  if (index < 0 || index >= tour.steps.length) return;
+  tour.idx = index;
+  await jumpToStep(ctx, tour.steps[index]);
+  renderTour(ctx);
 }
 
 async function stepTour(ctx: WorkspaceCtx, delta: number): Promise<void> {
   if (!tour) return;
-  const next = tour.idx + delta;
-  if (next < 0 || next >= tour.steps.length) return;
-  tour.idx = next;
-  const step = tour.steps[next];
+  await gotoStep(ctx, tour.idx + delta);
+}
 
-  // Jump the editor to the cited file:line — cross-repo aware.
-  if (step.file && step.line != null) {
-    const repo = step.repo ?? ctx.repo;
-    // The cited path is ALWAYS relative to the repo root. Do NOT strip a
-    // leading segment that matches the repo name — these repos have their
-    // package dir named the same as the repo (workspace/tunix/tunix/...,
-    // workspace/jax/jax/...), so `tunix/rl/grpo/x.py` is the real
-    // repo-relative path, not `<repo=tunix>/rl/grpo/x.py`.
-    const abs = path.join(ctx.cartographRoot, 'workspace', repo, step.file);
-    try {
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
-      const ed = await vscode.window.showTextDocument(doc, {
-        viewColumn: vscode.ViewColumn.One,
-        preview: true,
-      });
-      const ln = Math.max(0, step.line - 1);
-      const range = new vscode.Range(ln, 0, ln, 0);
-      ed.selection = new vscode.Selection(range.start, range.start);
-      ed.revealRange(range, vscode.TextEditorRevealType.InCenter);
-    } catch {
-      /* file may not exist on this machine — keep touring */
+// Resolve a cited (import-relative) path to the on-disk file. Most repos name
+// their package dir == repo (workspace/tunix/tunix/...), so the cited path IS
+// the on-disk path. Monorepos differ: orbax's `orbax/checkpoint/...` lives
+// under `checkpoint/orbax/checkpoint/...`, sglang's under `python/sglang/...`.
+// So if the naive path is missing, try the cited path under each top-level
+// project dir of the repo.
+function resolveStepFile(base: string, file: string): string {
+  const naive = path.join(base, file);
+  if (fs.existsSync(naive)) return naive;
+  try {
+    for (const entry of fs.readdirSync(base)) {
+      const cand = path.join(base, entry, file);
+      if (fs.existsSync(cand)) return cand;
     }
+  } catch {
+    /* base may not exist — fall through */
   }
-  renderTour(ctx);
+  return naive; // give up — the caller's try/catch handles a missing file
+}
+
+// Open the cited file:line in the editor column beside the tour panel.
+async function jumpToStep(ctx: WorkspaceCtx, step: WalkStep): Promise<void> {
+  if (!step.file || step.line == null) return;
+  const repo = step.repo ?? ctx.repo;
+  const abs = resolveStepFile(path.join(ctx.cartographRoot, 'workspace', repo), step.file);
+  try {
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
+    const ed = await vscode.window.showTextDocument(doc, {
+      viewColumn: vscode.ViewColumn.One,
+      preview: true,
+      preserveFocus: true,
+    });
+    const ln = Math.max(0, step.line - 1);
+    const range = new vscode.Range(ln, 0, ln, 0);
+    ed.selection = new vscode.Selection(range.start, range.start);
+    ed.revealRange(range, vscode.TextEditorRevealType.InCenter);
+  } catch {
+    /* file may not exist locally — keep touring */
+  }
 }
 
 function renderTour(ctx: WorkspaceCtx): void {
   if (!tour) return;
-  const step = tour.steps[tour.idx];
-  const nav = tour.steps
-    .map(
-      (s, i) =>
-        `<div class="tstep ${i === tour!.idx ? 'on' : ''}" onclick="post('goto',${i})">${
-          i + 1
-        }. ${escapeHtml(s.heading)}</div>`,
-    )
+  const t = tour;
+  const step = t.steps[t.idx];
+  const total = t.steps.length;
+  const pct = Math.round(((t.idx + 1) / total) * 100);
+  const repoName = t.repo ?? step.repo ?? ctx.repo;
+  const loc = step.file
+    ? `<button class="loc" title="re-open in the editor" onclick="post('reveal')">▸ ${escapeHtml(
+        step.repo ?? repoName,
+      )}/${escapeHtml(step.file)}:${step.line}</button>`
+    : `<div class="loc none">orientation · no single code anchor</div>`;
+  const toc = t.steps
+    .map((s, i) => {
+      const state = i < t.idx ? 'done' : i === t.idx ? 'on' : '';
+      return `<div class="tstep ${state}" onclick="post('goto',${i})"><span class="tnum">${
+        i + 1
+      }</span><span>${escapeHtml(s.heading)}</span></div>`;
+    })
     .join('');
-  tour.panel.webview.html = `<!doctype html><html><head><style>
-    body { font-family: var(--vscode-font-family); font-size: 13px; padding: 12px; }
-    .crumbs { color: var(--vscode-descriptionForeground); font-size: 11px; }
-    h2 { margin: 8px 0; }
-    .loc { font-family: var(--vscode-editor-font-family); font-size: 11px;
-      color: var(--vscode-textLink-foreground); margin-bottom: 10px; }
-    .prose p { line-height: 1.55; margin: 0 0 10px; }
-    .prose ul { margin: 0 0 10px; padding-left: 20px; line-height: 1.55; }
-    .prose code { font-family: var(--vscode-editor-font-family);
-      font-size: 0.92em; background: var(--vscode-textCodeBlock-background);
-      padding: 1px 4px; border-radius: 3px; }
-    .prose pre.code { font-family: var(--vscode-editor-font-family);
-      font-size: 12px; line-height: 1.45; background: var(--vscode-textCodeBlock-background);
-      padding: 10px; overflow-x: auto; white-space: pre; }
-    .ctrl { margin: 14px 0; display: flex; gap: 8px; }
-    button { font: inherit; padding: 5px 12px; cursor: pointer;
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground); border: none; }
-    button:disabled { opacity: 0.4; cursor: default; }
-    .toc { margin-top: 16px; border-top: 1px solid var(--vscode-panel-border);
-      padding-top: 10px; }
-    .tstep { padding: 3px 4px; cursor: pointer; font-size: 11px; }
-    .tstep.on { background: var(--vscode-list-activeSelectionBackground);
-      color: var(--vscode-list-activeSelectionForeground); }
+  t.panel.webview.html = tourShell({
+    repoName: escapeHtml(repoName),
+    kind: t.rampup ? 'ramp-up' : 'tour',
+    est: t.estMinutes ? ` · ~${t.estMinutes} min` : '',
+    pct,
+    counter: `${t.idx + 1} / ${total}`,
+    heading: escapeHtml(step.heading),
+    locHtml: loc,
+    bodyHtml: mdToHtml(step.prose),
+    atStart: t.idx === 0,
+    atEnd: t.idx === total - 1,
+    tocHtml: toc,
+  });
+}
+
+function tourShell(o: {
+  repoName: string;
+  kind: string;
+  est: string;
+  pct: number;
+  counter: string;
+  heading: string;
+  locHtml: string;
+  bodyHtml: string;
+  atStart: boolean;
+  atEnd: boolean;
+  tocHtml: string;
+}): string {
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src https: data:; script-src 'unsafe-inline' https:; connect-src https:;">
+  <style>
+    :root { --acc: var(--vscode-textLink-foreground); --bd: var(--vscode-panel-border); --mut: var(--vscode-descriptionForeground); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: var(--vscode-font-family); font-size: 13px; color: var(--vscode-foreground); line-height: 1.6; }
+    .top { position: sticky; top: 0; z-index: 5; background: var(--vscode-editor-background); padding: 12px 16px 0; border-bottom: 1px solid var(--bd); }
+    .row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+    .badge { background: var(--acc); color: var(--vscode-editor-background); padding: 1px 8px; border-radius: 10px; font-weight: 600; letter-spacing: .3px; }
+    .kind { color: var(--mut); text-transform: uppercase; letter-spacing: .8px; }
+    .counter { margin-left: auto; color: var(--mut); font-variant-numeric: tabular-nums; }
+    .bar { height: 3px; background: var(--bd); margin: 10px 0 0; }
+    .bar > i { display: block; height: 100%; width: ${o.pct}%; background: var(--acc); transition: width .25s ease; }
+    .content { padding: 16px; }
+    h1.step { font-size: 17px; font-weight: 600; margin: 2px 0 10px; }
+    .loc { display: inline-block; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--acc); background: var(--vscode-textCodeBlock-background); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; margin-bottom: 14px; cursor: pointer; }
+    .loc.none { color: var(--mut); cursor: default; }
+    .prose p { margin: 0 0 12px; }
+    .prose ul, .prose ol { margin: 0 0 12px; padding-left: 22px; }
+    .prose li { margin: 3px 0; }
+    .prose a { color: var(--acc); }
+    .prose code { font-family: var(--vscode-editor-font-family); font-size: .92em; background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 3px; }
+    .prose pre.code { font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.5; background: var(--vscode-textCodeBlock-background); border: 1px solid var(--bd); border-radius: 6px; padding: 12px; overflow-x: auto; margin: 0 0 12px; }
+    .prose pre.code code { background: none; padding: 0; }
+    .prose blockquote { margin: 0 0 12px; padding: 2px 12px; border-left: 3px solid var(--acc); color: var(--mut); }
+    .mermaid { background: var(--vscode-textCodeBlock-background); border: 1px solid var(--bd); border-radius: 6px; padding: 12px; margin: 0 0 12px; overflow-x: auto; text-align: center; font-family: var(--vscode-editor-font-family); font-size: 11px; white-space: pre; }
+    .mermaid.rendered { white-space: normal; }
+    .mermaid.rendered svg { max-width: 100%; height: auto; }
+    .mermaid.mermaid-failed { text-align: left; }
+    .mermaid.mermaid-failed::before { content: 'diagram source (could not render)'; display: block; color: var(--mut); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+    .acts { display: flex; gap: 8px; margin-top: 4px; }
+    .acts button { font: inherit; font-size: 11px; background: transparent; color: var(--acc); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+    .acts button:hover { background: var(--vscode-list-hoverBackground); }
+    details.toc { margin: 0 16px 16px; }
+    details.toc > summary { cursor: pointer; color: var(--mut); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 6px 0; }
+    .tstep { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; cursor: pointer; font-size: 12px; border-radius: 4px; }
     .tstep:hover { background: var(--vscode-list-hoverBackground); }
+    .tstep.on { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+    .tstep.done { color: var(--mut); }
+    .tnum { color: var(--mut); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }
+    .tstep.done .tnum { color: var(--acc); }
+    .nav { position: sticky; bottom: 0; background: var(--vscode-editor-background); border-top: 1px solid var(--bd); padding: 10px 16px; display: flex; gap: 8px; }
+    .nav button { font: inherit; padding: 6px 16px; cursor: pointer; border: none; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+    .nav button:disabled { opacity: .4; cursor: default; }
+    .nav .spacer { flex: 1; }
   </style></head><body>
-    <div class="crumbs">walkthrough tour · ${escapeHtml(tour.slug)} · step ${
-      tour.idx + 1
-    } / ${tour.steps.length}</div>
-    <h2>${escapeHtml(step.heading)}</h2>
-    ${
-      step.file
-        ? `<div class="loc">▸ ${escapeHtml(step.repo ?? ctx.repo)} / ${escapeHtml(
-            step.file,
-          )}:${step.line}</div>`
-        : '<div class="loc">(no code anchor for this step)</div>'
-    }
-    <div class="prose">${mdToHtml(step.prose)}</div>
-    <div class="ctrl">
-      <button ${tour.idx === 0 ? 'disabled' : ''} onclick="post('prev')">◂ prev</button>
-      <button ${
-        tour.idx === tour.steps.length - 1 ? 'disabled' : ''
-      } onclick="post('next')">next ▸</button>
+    <div class="top">
+      <div class="row"><span class="badge">${o.repoName}</span><span class="kind">${o.kind}${o.est}</span><span class="counter">${o.counter}</span></div>
+      <div class="bar"><i></i></div>
     </div>
-    <div class="toc">${nav}</div>
+    <div class="content">
+      <h1 class="step">${o.heading}</h1>
+      ${o.locHtml}
+      <div class="prose">${o.bodyHtml}</div>
+      <div class="acts">
+        <button onclick="post('ask')">💬 ask claude about this</button>
+        <button onclick="post('browser')">📖 open in browser</button>
+      </div>
+    </div>
+    <details class="toc"><summary>all steps</summary>${o.tocHtml}</details>
+    <div class="nav">
+      <button ${o.atStart ? 'disabled' : ''} onclick="post('prev')">◂ prev</button>
+      <button ${o.atEnd ? 'disabled' : ''} onclick="post('next')">next ▸</button>
+      <span class="spacer"></span>
+    </div>
     <script>
       const vscode = acquireVsCodeApi();
       function post(cmd, idx) { vscode.postMessage({ cmd, idx }); }
+      document.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (e.key === 'ArrowRight') { e.preventDefault(); post('next'); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); post('prev'); }
+      });
+    </script>
+    <script type="module">
+      try {
+        const mermaid = (await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')).default;
+        const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+        mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'loose' });
+        // Render each diagram independently with a fallback: a single bad
+        // diagram (agent-authored mermaid often has stray ';' or '<br/>') must
+        // NOT replace the panel with mermaid's error bomb — keep the legible
+        // source instead.
+        let i = 0;
+        for (const el of document.querySelectorAll('.mermaid')) {
+          const src = el.textContent || '';
+          try {
+            await mermaid.parse(src);
+            const { svg } = await mermaid.render('mmd-' + (i++), src);
+            el.innerHTML = svg;
+            el.classList.add('rendered');
+          } catch (err) {
+            el.classList.add('mermaid-failed');
+          }
+        }
+      } catch (e) { /* CDN blocked in this webview — sources stay visible in their boxes */ }
     </script>
   </body></html>`;
 }
@@ -781,6 +957,26 @@ function registerChat(
 
 // ── misc ────────────────────────────────────────────────────────────────
 
+// Open a dashboard URL (localhost:47777) from inside code-server. A raw
+// `openExternal` on a localhost:<port> URI gets proxy-mapped by code-server to
+// `/proxy/<port>/` but loses the path — so e.g. the drift queue link lands on
+// the proxy root (localhost:47780/proxy/47777/) instead of /console/review/.
+// `asExternalUri` performs the same mapping with the path preserved.
+async function openDashboardUrl(url: string): Promise<void> {
+  const u = vscode.Uri.parse(url);
+  // asExternalUri maps a localhost:<port> URI onto code-server's /proxy/<port>/
+  // base, but drops the PATH (a `localhost:47777/walkthroughs/x/` lands on the
+  // bare `/proxy/47777/`). So map only the origin, then re-attach the real
+  // path + query on the mapped Uri. Robust whether or not asExternalUri keeps
+  // the path.
+  const ext = await vscode.env.asExternalUri(u.with({ path: '/', query: '', fragment: '' }));
+  const basePath = ext.path.replace(/\/+$/, '');
+  const tailPath = u.path.startsWith('/') ? u.path : `/${u.path}`;
+  await vscode.env.openExternal(
+    ext.with({ path: basePath + tailPath, query: u.query, fragment: u.fragment }),
+  );
+}
+
 function openNoteInBrowser(note: string): void {
   // note is a cartograph-relative path like guides/jax/topics/x.md
   let url = apiBase() + '/';
@@ -790,7 +986,7 @@ function openNoteInBrowser(note: string): void {
   else if ((m = /^guides\/([^/]+)\/(overview|architecture|conventions)\.md$/.exec(note)))
     url += `repo/${m[1]}/bedrock/${m[2]}/`;
   else if (/^guides\/seams\.md$/.test(note)) url += 'seams/';
-  vscode.env.openExternal(vscode.Uri.parse(url));
+  void openDashboardUrl(url);
 }
 
 function escapeHtml(s: string): string {
@@ -806,33 +1002,59 @@ function mdToHtml(md: string): string {
   let html = '';
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) {
-      // Fenced code block — drop an optional leading language tag.
-      const code = parts[i].replace(/^[a-zA-Z0-9_+-]*\r?\n/, '');
-      html += `<pre class="code">${escapeHtml(code.replace(/\s+$/, ''))}</pre>`;
+      const nl = parts[i].indexOf('\n');
+      const lang = (nl >= 0 ? parts[i].slice(0, nl) : '').trim().toLowerCase();
+      const code = (nl >= 0 ? parts[i].slice(nl + 1) : parts[i]).replace(/\s+$/, '');
+      if (lang === 'mermaid') {
+        // ESCAPE the source: mermaid.run() reads the div's textContent, and a
+        // browser decodes entities back to the literal diagram. Emitting raw
+        // would let the browser parse embedded tags (e.g. a `<br/>` inside a
+        // Note), corrupting what mermaid sees → parse error.
+        html += `<div class="mermaid">${escapeHtml(code)}</div>`;
+      } else {
+        html += `<pre class="code"><code>${escapeHtml(code)}</code></pre>`;
+      }
       continue;
     }
-    // Prose — split into blocks on blank lines.
-    for (const block of parts[i].split(/\n\s*\n/)) {
-      const trimmed = block.trim();
-      if (!trimmed) continue;
-      const lines = trimmed.split('\n');
-      const isList = lines.every((l) => /^\s*[-*]\s+/.test(l));
-      if (isList) {
-        const items = lines
-          .map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ''))}</li>`)
-          .join('');
-        html += `<ul>${items}</ul>`;
-      } else {
-        html += `<p>${inline(trimmed.replace(/\n/g, ' '))}</p>`;
-      }
-    }
+    html += renderProse(parts[i]);
   }
   return html;
 
+  function renderProse(text: string): string {
+    let out = '';
+    for (const block of text.split(/\n\s*\n/)) {
+      const trimmed = block.replace(/^\n+|\n+$/g, '');
+      if (!trimmed.trim()) continue;
+      const lines = trimmed.split('\n');
+      const first = lines[0];
+      if (/^\s*[-*]\s+/.test(first)) out += renderList(lines, false);
+      else if (/^\s*\d+\.\s+/.test(first)) out += renderList(lines, true);
+      else if (lines.every((l) => /^\s*>\s?/.test(l)))
+        out += `<blockquote>${inline(lines.map((l) => l.replace(/^\s*>\s?/, '')).join(' '))}</blockquote>`;
+      else out += `<p>${inline(trimmed.replace(/\n/g, ' '))}</p>`;
+    }
+    return out;
+  }
+
+  // Wrapped list items: a marker line opens an <li>; continuation lines append.
+  function renderList(lines: string[], ordered: boolean): string {
+    const re = ordered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*]\s+(.*)$/;
+    const items: string[] = [];
+    for (const l of lines) {
+      const m = l.match(re);
+      if (m) items.push(m[1]);
+      else if (items.length) items[items.length - 1] += ' ' + l.trim();
+    }
+    const tag = ordered ? 'ol' : 'ul';
+    return `<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join('')}</${tag}>`;
+  }
+
   function inline(s: string): string {
     let t = escapeHtml(s);
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
     t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>');
     return t;
   }
 }
@@ -1108,6 +1330,7 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     }),
     vscode.commands.registerCommand('cartograph.startTour', () => startTour(ctx)),
+    vscode.commands.registerCommand('cartograph.rampUp', () => startRampUp(ctx)),
     vscode.commands.registerCommand('cartograph.tourNext', () => stepTour(ctx, +1)),
     vscode.commands.registerCommand('cartograph.tourPrev', () => stepTour(ctx, -1)),
     vscode.commands.registerCommand('cartograph.seams', async () => {
@@ -1122,17 +1345,17 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         return;
       }
-      vscode.env.openExternal(vscode.Uri.parse(apiBase() + '/seams/'));
+      void openDashboardUrl(apiBase() + '/seams/');
     }),
     vscode.commands.registerCommand('cartograph.openDashboard', () => {
-      vscode.env.openExternal(vscode.Uri.parse(`${apiBase()}/repo/${ctx.repo}/`));
+      void openDashboardUrl(`${apiBase()}/repo/${ctx.repo}/`);
     }),
     // Phase C: BM25 over the whole corpus.
     vscode.commands.registerCommand('cartograph.search', () => runCartographSearch(ctx)),
     // Phase E: opens the unified review queue when the user clicks the
     // 'drift: N' status-bar item or invokes the command directly.
     vscode.commands.registerCommand('cartograph.openDriftQueue', () => {
-      vscode.env.openExternal(vscode.Uri.parse(`${apiBase()}/console/review/`));
+      void openDashboardUrl(`${apiBase()}/console/review/`);
     }),
     vscode.commands.registerCommand('cartograph.refreshDrift', async () => {
       await refreshDriftStatus();
