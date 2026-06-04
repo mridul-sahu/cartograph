@@ -14,9 +14,13 @@ const byRepo = repos
 const total = byRepo.reduce((n, g) => n + g.items.length, 0);
 
 const statusClass: Record<string, string> = {
-  greenlit: 'text-green-700 border-green-600',
-  draft: 'text-muted border-border',
-  parked: 'text-amber-700 border-amber-600',
+  'gap-analysis': 'text-muted border-border',
+  'deep-dive': 'text-accent border-accent',
+  final: 'text-green-700 border-green-600',
+  'proposal-docx': 'text-green-700 border-green-600',
+  'design-docx': 'text-green-700 border-green-600',
+  implementing: 'text-green-700 border-green-600 font-semibold',
+  discarded: 'text-muted border-border line-through',
   superseded: 'text-muted border-border line-through',
 };
 
@@ -35,7 +39,9 @@ function repoLabel(repo: string): string {
     <p class="mt-2 text-muted max-w-2xl">
       The strategic layer above designs — what to build, why it's worth investing
       in, and where it should live. Grounded in gap research + paper analysis +
-      ecosystem trends. A greenlit proposal flows into a formal design doc.
+      ecosystem trends. A proposal hardens through <span class="font-mono">gap-analysis →
+      deep-dive</span>, and once marked <span class="font-mono">final</span> earns its
+      build deliverables: a proposal docx → a design docx → implementation.
     </p>
     <p class="mt-1 font-mono text-xs text-muted">{total} proposal{total === 1 ? '' : 's'} · {byRepo.length} target{byRepo.length === 1 ? '' : 's'}</p>
   </header>
@@ -57,7 +63,7 @@ function repoLabel(repo: string): string {
             {group.items.map((p: ProposalDoc) => (
               <a href={`/proposals/${group.repo}/${p.slug}/`} class="brutal-card p-5 no-underline block hover:border-accent transition-colors">
                 <div class="flex items-center justify-between gap-3 mb-2">
-                  <span class={`font-mono text-[10px] uppercase tracking-widest border px-1.5 py-0.5 ${statusClass[p.status] ?? statusClass.draft}`}>{p.status}</span>
+                  <span class={`font-mono text-[10px] uppercase tracking-widest border px-1.5 py-0.5 ${statusClass[p.status] ?? statusClass['gap-analysis']}`}>{p.status}</span>
                   {p.data.last_revised && (
                     <span class="font-mono text-xs text-muted">{formatDate(String(p.data.last_revised))}</span>
                   )}

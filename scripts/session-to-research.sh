@@ -33,16 +33,8 @@ if [[ -z "$log" ]]; then
   exit 1
 fi
 
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
-if [[ -z "$CLAUDE_BIN" ]]; then
-  for c in "$HOME/.local/bin/claude" /usr/local/bin/claude /opt/homebrew/bin/claude; do
-    [[ -x "$c" ]] && CLAUDE_BIN="$c" && break
-  done
-fi
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "claude CLI not found" >&2
-  exit 127
-fi
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 scope="$(grep -E '^scope:' "$log" | head -1 | sed -E 's/^scope:[[:space:]]*//')"
 repo=""
@@ -118,7 +110,7 @@ prompt_file="$(mktemp -t cartograph-session-research.XXXXXX)"
 flags="${CARTOGRAPH_S2R_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep,Bash}"
 cd "$CARTOGRAPH_ROOT"
 echo "session-to-research: invoking claude -p for session $slug (log: $log)"
-"$CLAUDE_BIN" $flags < "$prompt_file"
+cg_headless_run "research:$slug" -- $flags < "$prompt_file"
 rc=$?
 rm -f "$prompt_file"
 

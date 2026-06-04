@@ -203,6 +203,23 @@ CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
      "default": "90", "applies": "immediate",
      "label": "Digest lookback (days)", "help": "How far back the SessionStart digest scans episodes."},
 
+    # --- Headless spawn control ---
+    {"key": "CARTOGRAPH_HEADLESS_MAX", "group": "Headless control", "type": "int",
+     "default": "1", "applies": "immediate",
+     "label": "Max concurrent agents", "help": "Global cap on concurrent headless claude agents across all spawn points."},
+    {"key": "CARTOGRAPH_HEADLESS_DISABLE", "group": "Headless control", "type": "bool",
+     "default": "0", "applies": "immediate",
+     "label": "Disable headless spawns", "help": "1 = hard kill switch: no autonomous headless agent spawns at all."},
+    {"key": "CARTOGRAPH_CURATE_INTERVAL", "group": "Headless control", "type": "int",
+     "default": "1800", "applies": "restart",
+     "label": "Curate drain interval (s)", "help": "Seconds between batched curation drains (one agent drains the whole queue)."},
+    {"key": "CARTOGRAPH_CURATE_BATCH_MAX", "group": "Headless control", "type": "int",
+     "default": "8", "applies": "immediate",
+     "label": "Curate batch size", "help": "Max tasks one drain agent handles per pass; the rest drain next interval."},
+    {"key": "CARTOGRAPH_BUILD_MIN_INTERVAL", "group": "Headless control", "type": "int",
+     "default": "300", "applies": "restart",
+     "label": "Min build interval (s)", "help": "Minimum seconds between static-site rebuilds (coalesces a fold storm into one build)."},
+
     # --- Push toggles ---
     {"key": "CARTOGRAPH_AUTO_REVISE_PUSH", "group": "Push toggles", "type": "bool",
      "default": "1", "applies": "immediate",
@@ -619,7 +636,7 @@ _rebuild_pending = False
 # the window into a single build. An isolated edit after an idle period still
 # rebuilds immediately (the elapsed time already exceeds the interval).
 # Tune via CARTOGRAPH_BUILD_MIN_INTERVAL (seconds); 0 disables the throttle.
-_REBUILD_MIN_INTERVAL = max(0.0, float(os.environ.get("CARTOGRAPH_BUILD_MIN_INTERVAL", "90")))
+_REBUILD_MIN_INTERVAL = max(0.0, float(os.environ.get("CARTOGRAPH_BUILD_MIN_INTERVAL", "300")))
 _last_rebuild_finish = 0.0  # time.monotonic() when the last build completed
 
 
@@ -695,6 +712,14 @@ _BUNDLE_COMMIT_MESSAGES = {
 # promptly.
 _AUTO_COMMIT_QUIET_SECONDS = 30
 _AUTO_COMMIT_INTERVAL_SECONDS = 20
+
+# Batched-curation drain. The SessionStart/Stop hooks now ENQUEUE curation work
+# (fold/promote/episode/research) under .cartograph/curation-queue/ instead of
+# spawning a `claude -p` agent per item. This loop drains the whole queue with
+# ONE headless agent at most once per interval — the debounced, single-flight
+# replacement for the per-item fan-out that swarmed the machine. Tune via
+# CARTOGRAPH_CURATE_INTERVAL (seconds); the floor is 60s.
+_CURATE_INTERVAL_SECONDS = max(60.0, float(os.environ.get("CARTOGRAPH_CURATE_INTERVAL", "1800")))
 
 
 def _content_fingerprint() -> tuple[int, float]:
@@ -889,6 +914,54 @@ def _auto_commit_loop() -> None:
                     len(paths),
                     "" if len(paths) == 1 else "s",
                 )
+
+
+def _drain_curation_queue() -> dict[str, Any]:
+    """Run one batched curation drain. Best-effort, never raises.
+
+    Delegates to scripts/curate.sh, which hands the whole pending queue to a
+    single headless agent under the global cap (and is a no-op when the queue is
+    empty or an agent is already running). Returns a small status dict.
+    """
+    script = PROJECT_ROOT / "scripts" / "curate.sh"
+    try:
+        pending_before = subprocess.run(  # noqa: S603
+            ["bash", str(script), "count"],
+            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        r = subprocess.run(  # noqa: S603
+            ["bash", str(script), "drain"],
+            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=1800,
+        )
+        return {
+            "ok": r.returncode == 0,
+            "queued_before": pending_before,
+            "detail": (r.stderr or r.stdout)[-500:],
+        }
+    except Exception as exc:  # noqa: BLE001 — drain must never crash a caller/loop
+        LOG.warning("curate drain: %s", exc)
+        return {"ok": False, "detail": str(exc)}
+
+
+def _curate_loop() -> None:
+    """Periodically drain the curation queue with one batched agent.
+
+    The debounced, single-flight replacement for the old per-item spawn fan-out:
+    at most one headless agent per _CURATE_INTERVAL_SECONDS, and only when there
+    is queued work. Never dies.
+    """
+    while True:
+        time.sleep(_CURATE_INTERVAL_SECONDS)
+        try:
+            count = subprocess.run(  # noqa: S603
+                ["bash", str(PROJECT_ROOT / "scripts" / "curate.sh"), "count"],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+            if count and count != "0":
+                LOG.info("curate: %s task(s) queued — draining with one agent", count)
+                _drain_curation_queue()
+        except Exception as exc:  # noqa: BLE001 — loop must never die
+            LOG.warning("curate loop: %s", exc)
 
 
 def _request_rebuild() -> None:
@@ -2363,8 +2436,17 @@ def create_app() -> FastAPI:
                 '-p --output-format text --permission-mode acceptEdits '
                 '--allowedTools "Read,Glob,Grep,Bash"',
             )
+            # Route through the headless control layer so the answer agent sets
+            # the recursion marker (its own hooks won't enqueue/spawn). FORCE=1
+            # bypasses the concurrency cap: a synchronous user question must
+            # never be held back by a background drain.
+            headless_lib = PROJECT_ROOT / "scripts" / "lib" / "headless.sh"
             result = subprocess.run(  # noqa: S603
-                ["bash", "-c", f'eval "claude {flags}" < {prompt_file}'],
+                [
+                    "bash", "-c",
+                    f'source "{headless_lib}"; '
+                    f"CARTOGRAPH_HEADLESS_FORCE=1 cg_headless_run ask -- {flags} < {prompt_file}",
+                ],
                 capture_output=True, text=True, timeout=300,
                 cwd=str(PROJECT_ROOT),
             )
@@ -2379,6 +2461,26 @@ def create_app() -> FastAPI:
             "answer": result.stdout.strip(),
             "stderr": result.stderr[-1000:] if result.stderr else "",
         }
+
+    @app.post("/api/curate")
+    def curate_now() -> dict[str, Any]:
+        """Drain the curation queue on demand with one batched agent.
+
+        Runs the drain on a background thread (it can take minutes) and returns
+        at once with how many tasks were pending. The drain self-limits via the
+        global headless cap, so triggering this while an agent is already
+        running is a safe no-op.
+        """
+        script = PROJECT_ROOT / "scripts" / "curate.sh"
+        try:
+            pending = subprocess.run(  # noqa: S603
+                ["bash", str(script), "count"],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+        except Exception:  # noqa: BLE001
+            pending = "?"
+        threading.Thread(target=_drain_curation_queue, daemon=True).start()
+        return {"status": "draining", "queued": pending}
 
     @app.get("/api/promotions")
     def list_promotions() -> dict[str, Any]:
@@ -4401,6 +4503,10 @@ def main() -> None:
     # pushed after a quiet period, so a fresh design or updated harness
     # doesn't sit local while the served pages go stale.
     threading.Thread(target=_auto_commit_loop, daemon=True).start()
+    # Batched-curation drain — the SessionStart/Stop hooks enqueue work; this
+    # loop drains it with ONE headless agent per interval (cap=1), replacing the
+    # per-item spawn fan-out that swarmed the machine.
+    threading.Thread(target=_curate_loop, daemon=True).start()
     # uvicorn's reload mode imports by module string ("scripts.serve:app").
     # `python scripts/serve.py` only puts scripts/ on sys.path, not the
     # cartograph root — `app_dir` here prepends the root so both the

@@ -53,35 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/session-log.sh start"
-          },
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/upstream-sync.sh"
-          },
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/digest.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/auto-promote.sh"
-          },
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/scripts/build-file-index.py --quiet"
-          },
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/scripts/build-search-index.py --quiet"
-          },
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/scripts/anchor-coverage.py > /dev/null"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/diary.sh --if-stale"
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/session-start.sh"
           }
         ]
       }

@@ -491,7 +491,7 @@ export function loadAllResearch(): MarkdownDoc[] {
 
 export interface ProposalDoc extends MarkdownDoc {
   repo: string;          // real repo, or "_new"
-  status: string;        // draft | greenlit | parked | superseded
+  status: string;        // gap-analysis|deep-dive|final|discarded|proposal-docx|design-docx|implementing|superseded
   title: string;         // first H1, fallback slug
   pitch: string;         // first paragraph under the "## Pitch" heading
   hasDocx: boolean;      // a built proposal.docx sits next to the note
@@ -535,7 +535,7 @@ function toProposalDoc(doc: MarkdownDoc, repo: string): ProposalDoc {
   return {
     ...doc,
     repo: typeof doc.data.repo === 'string' ? doc.data.repo : repo,
-    status: typeof doc.data.status === 'string' ? doc.data.status : 'draft',
+    status: typeof doc.data.status === 'string' ? doc.data.status : 'gap-analysis',
     title: firstHeading(doc.body) ?? doc.slug,
     pitch: firstSection(doc.body, 'Pitch'),
     hasDocx: existsSync(doc.path.replace(/\.md$/, '.docx')),

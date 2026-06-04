@@ -35,17 +35,8 @@ if [[ -z "$log" ]]; then
   exit 1
 fi
 
-# Find claude.
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
-if [[ -z "$CLAUDE_BIN" ]]; then
-  for c in "$HOME/.local/bin/claude" /usr/local/bin/claude /opt/homebrew/bin/claude; do
-    if [[ -x "$c" ]]; then CLAUDE_BIN="$c"; break; fi
-  done
-fi
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "claude CLI not found" >&2
-  exit 127
-fi
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 # Extract scope from the session log frontmatter so we can target
 # the right episode subdir + frontmatter repo field.
@@ -119,7 +110,7 @@ prompt_file="$(mktemp -t cartograph-session-episode.XXXXXX)"
 flags="${CARTOGRAPH_S2E_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep,Bash}"
 cd "$CARTOGRAPH_ROOT"
 echo "session-to-episode: invoking claude -p for session $slug (log: $log)"
-"$CLAUDE_BIN" $flags < "$prompt_file"
+cg_headless_run "episode:$slug" -- $flags < "$prompt_file"
 rc=$?
 rm -f "$prompt_file"
 

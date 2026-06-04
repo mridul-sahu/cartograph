@@ -185,8 +185,10 @@ resolve_one() {
   #   --allowedTools          : restrict tool surface to what's needed
   # If the user wants stricter / more permissive behavior, override via
   # CARTOGRAPH_AUTO_REVISE_CLAUDE_FLAGS.
-  local flags="${CARTOGRAPH_AUTO_REVISE_CLAUDE_FLAGS:--p --output-format text --permission-mode acceptEdits --allowedTools \"Read,Edit,Glob,Grep,Bash\"}"
-  eval "claude $flags" < "$prompt_file" > "$log" 2>&1
+  local flags="${CARTOGRAPH_AUTO_REVISE_CLAUDE_FLAGS:--p --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Glob,Grep,Bash}"
+  # shellcheck source=lib/headless.sh
+  source "$(dirname "$0")/lib/headless.sh"
+  cg_headless_run "auto-revise:$repo" -- $flags < "$prompt_file" > "$log" 2>&1
   local rc=$?
   rm -f "$prompt_file"
 

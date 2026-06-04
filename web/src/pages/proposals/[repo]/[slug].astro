@@ -40,13 +40,17 @@ const prev = idx > 0 ? siblings[idx - 1] : null;
 const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
 
 const statusClass: Record<string, string> = {
-  greenlit: 'text-green-700 border-green-600',
-  draft: 'text-muted border-border',
-  parked: 'text-amber-700 border-amber-600',
-  superseded: 'text-muted border-border',
+  'gap-analysis': 'text-muted border-border',
+  'deep-dive': 'text-accent border-accent',
+  final: 'text-green-700 border-green-600',
+  'proposal-docx': 'text-green-700 border-green-600',
+  'design-docx': 'text-green-700 border-green-600',
+  implementing: 'text-green-700 border-green-600 font-semibold',
+  discarded: 'text-muted border-border line-through',
+  superseded: 'text-muted border-border line-through',
 };
 
-// Design-doc deliverable (docx) for greenlit proposals, surfaced if present.
+// Proposal docx deliverable, surfaced if present (the status `final` → `proposal-docx` step).
 const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
 ---
 
@@ -66,7 +70,7 @@ const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
           <span>proposal</span>
           <span class="text-border">·</span>
           <span class={repo === '_new' ? 'text-accent' : ''}>{repoLabel}</span>
-          <span class={`border px-1.5 py-0.5 ${statusClass[doc.status] ?? statusClass.draft}`}>{doc.status}</span>
+          <span class={`border px-1.5 py-0.5 ${statusClass[doc.status] ?? statusClass['gap-analysis']}`}>{doc.status}</span>
           <Chip>strategic</Chip>
         </div>
         <h1 class="text-3xl md:text-4xl font-bold tracking-tightish break-words">{doc.title}</h1>

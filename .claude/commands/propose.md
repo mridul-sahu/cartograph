@@ -142,15 +142,23 @@ Write `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/proposals/<repo|_new>/<slug>.md`
   analysis"), cite upstream code by its **public repo-relative path**
   (`tunix/rl/...` is public), external sources by URL — **never** a private
   `~/`/`cartograph/` absolute path.
-- **Next action** — usually a formal `designs/<repo>/<slug>/` doc, or
-  `/analyze-paper` on the key technique, or `/stack-new` for an MVP spike.
-  **Write the slash command inside a single backtick span** (e.g.
-  `` `/analyze-paper tunix foo --into tunix <url>` ``) — the proposals UI parses
-  the "Next action" section and renders each backticked `/command` as a
-  copy-to-clipboard button and each URL as a link.
+- **Next action** — driven by the proposal's `status` (the *Lifecycle* table in
+  `proposals/README.md`). A freshly written proposal is `gap-analysis` → its next
+  action is to **deep-dive the load-bearing technique** (`/analyze-paper <repo>
+  <slug> <url>`) and name the first failing test. If *this* `/propose` run
+  already de-risked the crux against real code and named the failing test, set
+  `deep-dive` → next action is the **human's `final` / `discarded` decision**.
+  **Never point a non-final proposal at `designs/` or `/stack-new`** — the
+  proposal docx and design docx are earned only after a human marks it `final`,
+  and an agent never self-promotes past `deep-dive`. **Write any slash command
+  inside a single backtick span** (e.g. `` `/analyze-paper tunix foo --into tunix
+  <url>` ``) — the proposals UI renders each backticked `/command` as a copy
+  button and each URL as a link.
 
-Set `status: draft`. Anti-bloat: if a related proposal exists, revise/supersede
-it rather than forking.
+Set `status:` to where the proposal actually landed: `gap-analysis` (the case is
+made but the crux isn't de-risked yet) or `deep-dive` (this run de-risked the
+load-bearing assumption against real code and named the first failing test).
+Anti-bloat: if a related proposal exists, revise/supersede it rather than forking.
 
 ## Phase 7 — Episode + report
 
@@ -165,10 +173,23 @@ it rather than forking.
 Don't `git add`/commit — `proposals/` is a bundled watch-loop dir (§3a). Write to
 the path and the chassis lands it.
 
-**When a proposal is finalized** (`status: greenlit`), build its docx deliverable
-— design-doc look-and-feel, investment-case content — with
-`just proposal-docx <repo> <slug>`. The proposals UI then surfaces a **download
-docx** button on the page. (Reusable builder: `proposals/_build/`.)
+**After a human marks it `final`** — the build deliverables follow, in order,
+each finalized before the next begins (the *Lifecycle* table in
+`proposals/README.md` is the source of truth):
+
+1. **Proposal docx** (`final` → `proposal-docx`). Add `d2` diagrams to the
+   proposal markdown — data flow, architecture, roadmap, same vocabulary as the
+   design diagrams — then `just proposal-docx <repo> <slug>`. The builder renders
+   the `d2` blocks to PNGs and embeds them (design-doc look-and-feel,
+   investment-case content); the UI surfaces a **download docx** button. Validate
+   with the docx skill's `validate.py` (`All validations PASSED!`).
+2. **Design docx** (`proposal-docx` → `design-docx`). The formal HLD at
+   `designs/<repo>/<slug>/` via the docx flow (CLAUDE.md §3c).
+3. **Implementation** (`design-docx` → `implementing`). `/stack-new <slug>`,
+   built against the finalized design.
+
+This skill's job ends at `deep-dive`. Promoting to `final` and producing the
+build deliverables is a separate, human-gated track — never auto-advance into it.
 
 ## The bar
 

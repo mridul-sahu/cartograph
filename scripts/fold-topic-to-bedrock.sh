@@ -28,17 +28,8 @@ if [[ ! -f "$topic_path" ]]; then
   exit 1
 fi
 
-# Find claude.
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
-if [[ -z "$CLAUDE_BIN" ]]; then
-  for c in "$HOME/.local/bin/claude" /usr/local/bin/claude /opt/homebrew/bin/claude; do
-    if [[ -x "$c" ]]; then CLAUDE_BIN="$c"; break; fi
-  done
-fi
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "claude CLI not found" >&2
-  exit 127
-fi
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 today="$(date +%Y-%m-%d)"
 current_sha="$(git -C "$CARTOGRAPH_ROOT/workspace/$repo" rev-parse --short upstream/main 2>/dev/null || echo unknown)"
@@ -111,7 +102,7 @@ prompt="$(mktemp -t cartograph-fold.XXXXXX)"
 echo "fold-topic-to-bedrock: invoking claude -p — folding topic '$topic' into $repo bedrock"
 flags="${CARTOGRAPH_FOLD_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Glob,Grep,Bash}"
 cd "$CARTOGRAPH_ROOT"
-"$CLAUDE_BIN" $flags < "$prompt"
+cg_headless_run "fold:$repo/$topic" -- $flags < "$prompt"
 rc=$?
 rm -f "$prompt"
 

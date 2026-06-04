@@ -67,25 +67,14 @@ repo="$(grep -E '^repo:' "$file" 2>/dev/null | head -1 | sed -E 's/^repo:[[:spac
   echo "Begin."
 } > "$prompt_file"
 
-# Find claude — the server's subprocess PATH may miss user bins.
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
-if [[ -z "$CLAUDE_BIN" ]]; then
-  for c in "$HOME/.local/bin/claude" "$HOME/.npm-global/bin/claude" \
-           "/usr/local/bin/claude" "/opt/homebrew/bin/claude"; do
-    [[ -x "$c" ]] && CLAUDE_BIN="$c" && break
-  done
-fi
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "revise-rejected: claude CLI not found" > "$log"
-  rm -f "$prompt_file"
-  exit 127
-fi
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 echo "revise-rejected: invoking claude -p for '$rel' (log: $log)"
 cd "$CARTOGRAPH_ROOT"
 
 flags="${CARTOGRAPH_REVISE_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Glob,Grep,Bash}"
-"$CLAUDE_BIN" $flags < "$prompt_file" > "$log" 2>&1
+cg_headless_run "revise:$rel" -- $flags < "$prompt_file" > "$log" 2>&1
 rc=$?
 rm -f "$prompt_file"
 

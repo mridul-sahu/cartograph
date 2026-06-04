@@ -72,17 +72,8 @@ if [[ -f "$dest" ]]; then
   echo "promote-tag: topic note already exists at $dest — claude will revise it instead" >&2
 fi
 
-# Find claude.
-CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
-if [[ -z "$CLAUDE_BIN" ]]; then
-  for c in "$HOME/.local/bin/claude" /usr/local/bin/claude /opt/homebrew/bin/claude; do
-    if [[ -x "$c" ]]; then CLAUDE_BIN="$c"; break; fi
-  done
-fi
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "claude CLI not found" >&2
-  exit 127
-fi
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 today="$(date +%Y-%m-%d)"
 
@@ -151,7 +142,7 @@ prompt="$(mktemp -t cartograph-promote.XXXXXX)"
 echo "promote-tag: invoking claude -p — distilling ${#matching[@]} episodes for tag '$tag' → guides/$target_repo/topics/${tag}.md"
 flags="${CARTOGRAPH_PROMOTE_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep,Bash}"
 cd "$CARTOGRAPH_ROOT"
-"$CLAUDE_BIN" $flags < "$prompt"
+cg_headless_run "promote:$tag" -- $flags < "$prompt"
 rc=$?
 rm -f "$prompt"
 

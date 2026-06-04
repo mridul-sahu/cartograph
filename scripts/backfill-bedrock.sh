@@ -15,6 +15,8 @@ set -uo pipefail
 
 source "$(dirname "$0")/lib/load-config.sh"
 source "$(dirname "$0")/lib/notify-server.sh"
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 
 LOG_DIR="$CARTOGRAPH_ROOT/.backfill-log"
 mkdir -p "$LOG_DIR"
@@ -226,7 +228,7 @@ fi
 } > "$log"
 
 flags="${CARTOGRAPH_BACKFILL_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Glob,Grep,Bash}"
-"$CLAUDE_BIN" $flags < "$prompt_file" >> "$log" 2>&1
+cg_headless_run "backfill:$repo" -- $flags < "$prompt_file" >> "$log" 2>&1
 rc=$?
 rm -f "$prompt_file"
 

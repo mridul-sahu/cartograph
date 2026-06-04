@@ -36,6 +36,10 @@ SESSIONS_DIR="$CARTOGRAPH_ROOT/sessions"
 # Drain stdin (hook contract) — we don't read it but Claude Code expects us to consume it.
 cat 2>/dev/null >/dev/null || true
 
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
+cg_autospawn_guard   # no-op unless inside a headless agent / kill switch on
+
 CWD="$(pwd -P)"
 WORKSPACE_REAL="$(cd "$WORKSPACE" 2>/dev/null && pwd -P || echo "$WORKSPACE")"
 
@@ -164,18 +168,9 @@ If you don't write one, cartograph will auto-draft one in the background
 from the session log at ${session_log} for you to review later.
 EOF
   if [[ "$auto" == "1" ]]; then
-    slug="$(basename "$session_log" .md)"
-    marker="$SESSIONS_DIR/.auto-draft-${slug}.lock"
-    if [[ ! -f "$marker" ]]; then
-      touch "$marker"
-      log_file="${TMPDIR:-/tmp}/cartograph-auto-episode-${slug}.log"
-      nohup env CARTOGRAPH_AUTO_DRAFTED=1 \
-        bash "$CARTOGRAPH_ROOT/scripts/session-to-episode.sh" "$slug" \
-        > "$log_file" 2>&1 &
-      disown $! 2>/dev/null || true
-      ( sleep 600 && rm -f "$marker" ) &
-      disown $! 2>/dev/null || true
-    fi
+    # Enqueue, don't spawn — the batched drain (one agent) drafts it later.
+    rel="${session_log#"$CARTOGRAPH_ROOT"/}"
+    bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue episode "$REPO" "$rel" || true
   fi
 fi
 
@@ -200,18 +195,8 @@ if [[ -f "$session_log" ]]; then
 fi
 if [[ "$auto_research" == "1" && -z "$research_written" && -f "$session_log" ]] \
    && (( research_signals >= research_threshold )); then
-  slug="$(basename "$session_log" .md)"
-  marker="$SESSIONS_DIR/.auto-research-${slug}.lock"
-  if [[ ! -f "$marker" ]]; then
-    touch "$marker"
-    rlog="${TMPDIR:-/tmp}/cartograph-auto-research-${slug}.log"
-    nohup env CARTOGRAPH_AUTO_DRAFTED=1 \
-      bash "$CARTOGRAPH_ROOT/scripts/session-to-research.sh" "$slug" \
-      > "$rlog" 2>&1 &
-    disown $! 2>/dev/null || true
-    ( sleep 600 && rm -f "$marker" ) &
-    disown $! 2>/dev/null || true
-  fi
+  rel="${session_log#"$CARTOGRAPH_ROOT"/}"
+  bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue research "$REPO" "$rel" || true
 fi
 
 exit 0
