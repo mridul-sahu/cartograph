@@ -1,28 +1,19 @@
 ---
 import Base from '~/layouts/Base.astro';
-import Chip from '~/components/Chip.astro';
-import { loadProposalRepos, loadProposals, type ProposalDoc } from '~/lib/content';
-import { formatDate } from '~/lib/time';
+import ProposalNode from '~/components/ProposalNode.astro';
+import { loadProposalRepos, loadProposals, buildProposalTree } from '~/lib/content';
 
 const repos = loadProposalRepos();
 const byRepo = repos
-  .map((repo) => ({ repo, items: loadProposals(repo) }))
+  .map((repo) => {
+    const items = loadProposals(repo);
+    return { repo, items, tree: buildProposalTree(items) };
+  })
   .filter((g) => g.items.length > 0)
   // `_new` (new-repo proposals) first, then alphabetical.
   .sort((a, b) => (a.repo === '_new' ? -1 : b.repo === '_new' ? 1 : a.repo.localeCompare(b.repo)));
 
 const total = byRepo.reduce((n, g) => n + g.items.length, 0);
-
-const statusClass: Record<string, string> = {
-  'gap-analysis': 'text-muted border-border',
-  'deep-dive': 'text-accent border-accent',
-  final: 'text-green-700 border-green-600',
-  'proposal-docx': 'text-green-700 border-green-600',
-  'design-docx': 'text-green-700 border-green-600',
-  implementing: 'text-green-700 border-green-600 font-semibold',
-  discarded: 'text-muted border-border line-through',
-  superseded: 'text-muted border-border line-through',
-};
 
 function repoLabel(repo: string): string {
   return repo === '_new' ? 'new repo' : repo;
@@ -41,7 +32,10 @@ function repoLabel(repo: string): string {
       in, and where it should live. Grounded in gap research + paper analysis +
       ecosystem trends. A proposal hardens through <span class="font-mono">gap-analysis →
       deep-dive</span>, and once marked <span class="font-mono">final</span> earns its
-      build deliverables: a proposal docx → a design docx → implementation.
+      build deliverables: a proposal docx → a design docx → implementation. An
+      <span class="font-mono"> umbrella</span> proposal nests
+      <span class="font-mono"> sub-proposals</span> (indented beneath it) — work we
+      might or might not do; each sub's status shows how committed we are.
     </p>
     <p class="mt-1 font-mono text-xs text-muted">{total} proposal{total === 1 ? '' : 's'} · {byRepo.length} target{byRepo.length === 1 ? '' : 's'}</p>
   </header>
@@ -59,19 +53,9 @@ function repoLabel(repo: string): string {
             <span class="text-border">·</span>
             <span>{group.items.length}</span>
           </h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {group.items.map((p: ProposalDoc) => (
-              <a href={`/proposals/${group.repo}/${p.slug}/`} class="brutal-card p-5 no-underline block hover:border-accent transition-colors">
-                <div class="flex items-center justify-between gap-3 mb-2">
-                  <span class={`font-mono text-[10px] uppercase tracking-widest border px-1.5 py-0.5 ${statusClass[p.status] ?? statusClass['gap-analysis']}`}>{p.status}</span>
-                  {p.data.last_revised && (
-                    <span class="font-mono text-xs text-muted">{formatDate(String(p.data.last_revised))}</span>
-                  )}
-                </div>
-                <h3 class="font-bold text-lg leading-snug break-words">{p.title}</h3>
-                {p.pitch && <p class="mt-2 text-sm text-muted line-clamp-3">{p.pitch}</p>}
-                <div class="mt-3 font-mono text-[11px] text-muted truncate">{group.repo}/{p.slug}</div>
-              </a>
+          <div class="space-y-3">
+            {group.tree.map((node) => (
+              <ProposalNode node={node} repo={group.repo} />
             ))}
           </div>
         </section>

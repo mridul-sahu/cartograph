@@ -96,7 +96,7 @@ maintain. The framework just removes the friction.
 
 ## How it works (the architecture)
 
-### Five content layers
+### Six content layers
 
 Ordered from "carefully shaped" to "loose drafts":
 
@@ -107,6 +107,7 @@ Ordered from "carefully shaped" to "loose drafts":
 | **Episodes** | `episodes/YYYY-MM/*.md` | Per-session worknotes: task, files touched, insight | Auto-drafted by the Stop hook. Reviewed via the inbox |
 | **Research / Papers** | `research/<repo>/*.md`, `papers/<repo>/<slug>/notes.md` | External material — blog posts, RFCs, papers, comparisons | Manual via `/research` / `/paper`; auto-drafted when a session used WebFetch / WebSearch |
 | **Seams** | `guides/seams.md` | Cross-repo edges ("JAX lowers via XLA's `lower_jaxpr_to_module`") | Appended via `/seam` |
+| **Proposals** | `proposals/<repo>/<slug>.md` | Investment-cased build plans — what to build next, grounded in gap research + papers + ecosystem trends | A phased lifecycle (`gap-analysis → deep-dive → final → proposal-docx → design → implement`); nest as an **umbrella + sub-proposals**; formalized into a `.docx` via `/proposal-final-draft` |
 
 Plus a `learn/` tree for **walkthroughs**, **ramp-ups**, and **drafts** —
 narrative content for explaining a codebase to someone new, and a
@@ -414,17 +415,53 @@ brought you there is invisible to the upstream:
 You can configure your own personal tokens (company name, internal
 codenames) via `CARTOGRAPH_FORBIDDEN_EXTRAS` in `cartograph.env`.
 
-### 9. Twenty-seven slash commands
+### 9. The research → build pipeline (gap-scan → propose → trees → docx)
+
+Cartograph isn't only a notebook for *understanding* code — it's a pipeline for
+deciding **what to build next** and turning that into a formal, reviewable
+proposal, each step grounded in the layers above. Four slash commands form the
+chain:
+
+- **`/gap-scan <repo> <slug> <question>`** — survey an external ecosystem (e.g.
+  "what do PyTorch post-training frameworks have that JAX should build?"),
+  adversarially verify the findings, ground them against the repo's own topic
+  notes, and emit a **prioritized build backlog**.
+- **`/analyze-paper <repo> <slug> <url>`** — deep-read a paper end to end and
+  land an *implementable-concept* topic note for a target library.
+- **`/propose <repo|new> <slug> <theme>`** — turn gaps + papers + ecosystem
+  trends into an **investment-cased proposal** with a falsifiable thesis and a
+  repo-home decision (it can even propose a brand-new repo).
+- **`/proposal-final-draft <repo> <slug>`** — render a proposal into a formal,
+  well-researched **`.docx`** in a fixed structure (Introduction · Background ·
+  Ecosystem + Impact · High-Level Design with `d2` diagrams · Feasibility & Risk
+  · References), validated and ready to share.
+
+Proposals move through an explicit **lifecycle** — `gap-analysis → deep-dive →
+final → proposal-docx → design-docx → implementing` — and form a **tree**: an
+*umbrella* proposal (a north-star like "Tunix as a frontier agentic-capability
+stack") nests **sub-proposals** you might or might not do, each carrying its own
+status badge so the tree shows commitment at a glance.
+
+![the proposals tree — umbrellas with nested sub-proposals](screenshots/proposals.png)
+
+Each proposal page surfaces its lifecycle next-action (a copy-to-clipboard slash
+command), its parent and sub-proposals, and a one-click **download** of the
+formal docx once it's built.
+
+![a proposal page — lifecycle next-action, sub-proposals, and the docx deliverable](screenshots/proposal-page.png)
+
+### 10. Thirty-three slash commands
 
 | Category | Commands |
 |---|---|
 | **Orientation** | `/whatknows <path>` — reverse index for a file • `/cite <symbol>` — grep across layers • `/find <natural query>` — BM25 retrieval • `/queue` — review queue • `/orient` — re-inject for current cwd • `/freshness` — per-fork upstream age • `/metrics` — bedrock freshness, review ratio, drift count |
 | **Authoring** | `/episode <title>` • `/research <repo> <slug>` • `/paper <repo> <slug>` • `/topic <repo> <slug>` • `/draft <slug>` • `/walkthrough <slug>` • `/seam <a> <b>` • `/pin <path>` |
 | **Curation** | `/revise <topic>` — with diff pre-staged • `/promote <tag>` — episodes → topic • `/auto-revise <topic>` — headless drift fix • `/backfill <repo>` — full bedrock rebuild |
+| **Research → proposals** | `/gap-scan <repo> <slug> <q>` — ecosystem gap analysis → backlog • `/analyze-paper <repo> <slug> <url>` — paper → implementable note • `/propose <repo\|new> <slug> <theme>` — investment-cased proposal • `/proposal-final-draft <repo> <slug>` — formal proposal docx |
 | **Stacked PRs** | `/stack` • `/stack-new` • `/stack-pr` • `/stack-submit` • `/stack-restack` • `/stack-sync` |
 | **Hygiene** | `/doctor` — verify all forks • `/lint` — content quality bar |
 
-### 10. Seventy-one API endpoints
+### 11. Seventy-one API endpoints
 
 Everything the slash commands and UI do is exposed as a JSON API on
 `http://localhost:47777/api/`. Useful if you want to build your own

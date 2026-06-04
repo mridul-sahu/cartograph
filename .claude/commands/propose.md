@@ -158,7 +158,19 @@ Write `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/proposals/<repo|_new>/<slug>.md`
 Set `status:` to where the proposal actually landed: `gap-analysis` (the case is
 made but the crux isn't de-risked yet) or `deep-dive` (this run de-risked the
 load-bearing assumption against real code and named the first failing test).
-Anti-bloat: if a related proposal exists, revise/supersede it rather than forking.
+Anti-bloat: if a related proposal exists, revise it, or supersede it — set
+`status: superseded` + `superseded_by:`, then **remove the file** (git history is
+the archive) — rather than forking a near-duplicate.
+
+**Proposal trees (umbrellas & sub-proposals).** Proposals form a tree. If this
+proposal is a component of a larger north-star, set `parent: <umbrella-slug>` so
+it nests under that umbrella. If *this* is an umbrella that organizes several
+component builds, write it as a normal proposal and set `parent:` on each
+component — **don't fold them in, link them** (the umbrella owns the thesis +
+sequencing; each child owns its code-grounded build). Speculative components you
+might or might not build live as sub-proposals at `status: gap-analysis` under
+their umbrella — they cost nothing if dropped (`status: discarded`). Full
+convention: `proposals/README.md` → *Proposal trees*.
 
 ## Phase 7 — Episode + report
 
@@ -177,12 +189,12 @@ the path and the chassis lands it.
 each finalized before the next begins (the *Lifecycle* table in
 `proposals/README.md` is the source of truth):
 
-1. **Proposal docx** (`final` → `proposal-docx`). Add `d2` diagrams to the
-   proposal markdown — data flow, architecture, roadmap, same vocabulary as the
-   design diagrams — then `just proposal-docx <repo> <slug>`. The builder renders
-   the `d2` blocks to PNGs and embeds them (design-doc look-and-feel,
-   investment-case content); the UI surfaces a **download docx** button. Validate
-   with the docx skill's `validate.py` (`All validations PASSED!`).
+1. **Proposal docx** (`final` → `proposal-docx`). Run `/proposal-final-draft
+   <repo> <slug>` — a formal, well-researched docx in the standing structure
+   (Introduction / Background / Ecosystem+Impact / HLD / Feasibility & Risk /
+   References), with `d2` diagrams in the HLD; the UI surfaces a **download docx**
+   button. Not a thin render of the markdown — see `proposals/README.md` → *The
+   proposal docx*.
 2. **Design docx** (`proposal-docx` → `design-docx`). The formal HLD at
    `designs/<repo>/<slug>/` via the docx flow (CLAUDE.md §3c).
 3. **Implementation** (`design-docx` → `implementing`). `/stack-new <slug>`,

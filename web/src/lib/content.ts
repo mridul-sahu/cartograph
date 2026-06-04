@@ -495,6 +495,33 @@ export interface ProposalDoc extends MarkdownDoc {
   title: string;         // first H1, fallback slug
   pitch: string;         // first paragraph under the "## Pitch" heading
   hasDocx: boolean;      // a built proposal.docx sits next to the note
+  parent: string | null; // slug of the umbrella proposal this is a sub-proposal of (same repo); null = top-level
+}
+
+// A node in the proposal tree: an uber/umbrella proposal can have sub-proposals
+// (children) we might or might not do — each child's `status` says how committed
+// we are (gap-analysis/deep-dive = candidate, final/implementing = building,
+// discarded = won't). Built per-repo from the flat `parent:` edges.
+export interface ProposalTreeNode {
+  proposal: ProposalDoc;
+  children: ProposalTreeNode[];
+}
+
+// Build the parent/child forest from a flat proposal list (one repo). A proposal
+// with `parent: <slug>` nests under that slug; an absent/unknown/self parent →
+// top-level root. Order within a level follows the input order (by last_revised).
+export function buildProposalTree(items: ProposalDoc[]): ProposalTreeNode[] {
+  const nodes = new Map<string, ProposalTreeNode>(
+    items.map((p) => [p.slug, { proposal: p, children: [] as ProposalTreeNode[] }]),
+  );
+  const roots: ProposalTreeNode[] = [];
+  for (const p of items) {
+    const node = nodes.get(p.slug)!;
+    const parent = p.parent && p.parent !== p.slug ? nodes.get(p.parent) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
 }
 
 // The actionable "## Next action" section, parsed for the UI: copyable slash
@@ -539,6 +566,7 @@ function toProposalDoc(doc: MarkdownDoc, repo: string): ProposalDoc {
     title: firstHeading(doc.body) ?? doc.slug,
     pitch: firstSection(doc.body, 'Pitch'),
     hasDocx: existsSync(doc.path.replace(/\.md$/, '.docx')),
+    parent: typeof doc.data.parent === 'string' && doc.data.parent.trim() ? doc.data.parent.trim() : null,
   };
 }
 

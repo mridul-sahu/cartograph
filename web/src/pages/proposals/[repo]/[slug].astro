@@ -39,6 +39,11 @@ const idx = siblings.findIndex((s) => s.slug === slug);
 const prev = idx > 0 ? siblings[idx - 1] : null;
 const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
 
+// Proposal tree: the umbrella this is a sub-proposal of (parent), and the
+// sub-proposals nested under it (children) — same repo.
+const parent = doc.parent ? (siblings.find((s) => s.slug === doc.parent) ?? null) : null;
+const children = siblings.filter((s) => s.parent === slug);
+
 const statusClass: Record<string, string> = {
   'gap-analysis': 'text-muted border-border',
   'deep-dive': 'text-accent border-accent',
@@ -74,6 +79,12 @@ const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
           <Chip>strategic</Chip>
         </div>
         <h1 class="text-3xl md:text-4xl font-bold tracking-tightish break-words">{doc.title}</h1>
+        {parent && (
+          <p class="mt-2 text-sm">
+            <span class="font-mono text-xs text-muted uppercase tracking-widest">↑ sub-proposal of </span>
+            <a href={`/proposals/${repo}/${parent.slug}/`} class="text-accent hover:underline font-medium">{parent.title}</a>
+          </p>
+        )}
         {doc.data.last_revised && (
           <p class="mt-2 font-mono text-xs text-muted">revised {formatDate(String(doc.data.last_revised))}</p>
         )}
@@ -140,6 +151,23 @@ const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
         </a>
       )}
 
+      {children.length > 0 && (
+        <div class="brutal-card p-4">
+          <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">sub-proposals · {children.length}</h3>
+          <ul class="space-y-2">
+            {children.map((c) => (
+              <li>
+                <a href={`/proposals/${repo}/${c.slug}/`} class="flex items-start gap-2 no-underline hover:text-accent">
+                  <span class={`font-mono text-[9px] uppercase tracking-widest border px-1 py-0.5 flex-shrink-0 mt-0.5 ${statusClass[c.status] ?? statusClass['gap-analysis']}`}>{c.status}</span>
+                  <span class="text-sm break-words leading-snug">{c.title}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="mt-2 font-mono text-[10px] text-muted">status = how committed (we might or might not do each)</p>
+        </div>
+      )}
+
       <div class="brutal-card p-4">
         <h3 class="font-mono text-xs uppercase tracking-widest text-muted mb-3">pin</h3>
         <BookmarkButton path={notePath} title={slug} client:load />
@@ -159,6 +187,8 @@ const docxUrl = `/api/proposal-docx/${repo}/${slug}`;
           <dt class="text-muted">target</dt><dd>{repoLabel}</dd>
           <dt class="text-muted">slug</dt><dd class="break-all">{slug}</dd>
           <dt class="text-muted">status</dt><dd>{doc.status}</dd>
+          {parent && (<><dt class="text-muted">parent</dt><dd class="break-all">{parent.slug}</dd></>)}
+          {children.length > 0 && (<><dt class="text-muted">sub</dt><dd>{children.length} proposal{children.length === 1 ? '' : 's'}</dd></>)}
           {doc.data.last_revised && (<><dt class="text-muted">revised</dt><dd>{formatDate(String(doc.data.last_revised))}</dd></>)}
           <dt class="text-muted">words</dt><dd>{doc.wordCount.toLocaleString()}</dd>
           {tags.length > 0 && (

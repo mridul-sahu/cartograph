@@ -114,3 +114,10 @@ proposal-docx repo slug:
     cd "{{ROOT}}/proposals/_build" && [ -d node_modules ] || npm install
     node "{{ROOT}}/proposals/_build/build-proposal-docx.mjs" "{{repo}}" "{{slug}}"
 
+# Build the FORMAL final-draft docx (the /proposal-final-draft deliverable —
+# Introduction / Background / Ecosystem+Impact / HLD / Feasibility & Risk /
+# References). Renders proposals/<repo>/<slug>.final-draft.md (the builder prefers
+# it over <slug>.md) → proposals/<repo>/<slug>.docx, with d2 diagrams embedded.
+#   just proposal-final-draft tunix frontier-agentic-capability
+proposal-final-draft repo slug: (proposal-docx repo slug)
+
