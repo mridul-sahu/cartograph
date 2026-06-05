@@ -664,7 +664,7 @@ def _rebuild_worker() -> None:
             # at the top throttles the next run.
 
 
-_CONTENT_DIRS = ("guides", "episodes", "research", "papers", "learn", "setups", "designs", "proposals")
+_CONTENT_DIRS = ("guides", "episodes", "research", "papers", "research_papers", "learn", "setups", "designs", "proposals")
 
 # Folders the auto-commit loop watches. Anything that lands under these
 # paths is staged + committed + pushed after a quiet period, so authored
@@ -683,6 +683,7 @@ _AUTO_COMMIT_DIRS = (
     "episodes",
     "research",
     "papers",
+    "research_papers",
     "learn",
     "proposals",
 )
@@ -691,7 +692,7 @@ _AUTO_COMMIT_DIRS = (
 # (one batch of files → one commit). designs/ and setups/ are the exception:
 # they commit per deliverable sub-folder (see _auto_commit_group_key).
 _AUTO_COMMIT_BUNDLE_DIRS = frozenset(
-    {"sessions", "diary", "guides", "episodes", "research", "papers", "learn", "proposals"}
+    {"sessions", "diary", "guides", "episodes", "research", "papers", "research_papers", "learn", "proposals"}
 )
 
 # Commit message per bundled dir; falls back to a generic message otherwise.
@@ -702,6 +703,7 @@ _BUNDLE_COMMIT_MESSAGES = {
     "episodes": "content: episode notes",
     "research": "content: research notes",
     "papers": "content: paper notes",
+    "research_papers": "content: research-paper notes",
     "learn": "content: learn updates",
     "proposals": "content: proposal notes",
 }
@@ -2606,9 +2608,19 @@ def create_app() -> FastAPI:
                         counts[name] += hits
                         file_counts[name].add(rel)
 
+        # A candidate is already covered if its name — or its leading repo
+        # token before a '-'/'_' variant suffix (e.g. "sglang-jax" → "sglang")
+        # — matches a tracked repo. Without the variant check an ecosystem
+        # candidate like "sglang-jax" keeps offering a "set up" button even
+        # though its base repo (sglang) is already a tracked fork.
+        def _already_tracked(cand: str) -> bool:
+            return (cand in tracked
+                    or cand.split("-", 1)[0] in tracked
+                    or cand.split("_", 1)[0] in tracked)
+
         suggestions = []
         for name, n in counts.items():
-            if name in tracked:
+            if _already_tracked(name):
                 continue
             files = sorted(file_counts[name])
             # Threshold: ≥5 hits across ≥2 files = worth proposing as a fork.

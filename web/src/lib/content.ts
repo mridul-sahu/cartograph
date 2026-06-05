@@ -12,6 +12,7 @@ const GUIDES = join(PROJECT_ROOT, 'guides');
 const LEARN = join(PROJECT_ROOT, 'learn');
 const RESEARCH = join(PROJECT_ROOT, 'research');
 const PAPERS = join(PROJECT_ROOT, 'papers');
+const RESEARCH_PAPERS = join(PROJECT_ROOT, 'research_papers');
 const SETUPS = join(PROJECT_ROOT, 'setups');
 const DESIGNS = join(PROJECT_ROOT, 'designs');
 const PROPOSALS = join(PROJECT_ROOT, 'proposals');
@@ -156,6 +157,49 @@ export function loadPaper(repo: string, slug: string): PaperDoc | null {
   const dir = join(PAPERS, repo, slug);
   if (!existsSync(dir)) return null;
   return loadPaperDir(repo, dir);
+}
+
+// ── research_papers — repo-agnostic captured paper notes
+// (research_papers/<slug>/notes.md). Flat, not repo-scoped: a single paper
+// can touch many repos via its code_refs.
+
+export interface ResearchPaperDoc extends MarkdownDoc {
+  hasPdf: boolean;
+}
+
+function loadResearchPaperDir(dir: string): ResearchPaperDoc | null {
+  const notes = join(dir, 'notes.md');
+  if (!existsSync(notes)) return null;
+  const doc = loadFile(notes);
+  if (!doc) return null;
+  const pdfRel = typeof doc.data.pdf === 'string' ? doc.data.pdf : 'paper.pdf';
+  return { ...doc, slug: basename(dir), hasPdf: existsSync(join(dir, pdfRel)) };
+}
+
+export function loadAllResearchPapers(): ResearchPaperDoc[] {
+  if (!existsSync(RESEARCH_PAPERS)) return [];
+  const out: ResearchPaperDoc[] = [];
+  for (const entry of readdirSync(RESEARCH_PAPERS)) {
+    const dir = join(RESEARCH_PAPERS, entry);
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const p = loadResearchPaperDir(dir);
+    if (p) out.push(p);
+  }
+  return out.sort((a, b) =>
+    String(b.data.last_revised ?? b.data.date ?? '').localeCompare(
+      String(a.data.last_revised ?? a.data.date ?? ''),
+    ),
+  );
+}
+
+export function loadResearchPaper(slug: string): ResearchPaperDoc | null {
+  const dir = join(RESEARCH_PAPERS, slug);
+  if (!existsSync(dir)) return null;
+  return loadResearchPaperDir(dir);
 }
 
 // ── setups — runnable harnesses per repo (setups/<repo>/) ────────────────
@@ -358,6 +402,7 @@ export function artifactUrl(path: string): string | null {
   if ((m = /^research\/([^/]+)\/([^/]+)\.md$/.exec(path))) return `/research/${m[1]}/${m[2]}/`;
   if ((m = /^proposals\/([^/]+)\/([^/]+)\.md$/.exec(path))) return `/proposals/${m[1]}/${m[2]}/`;
   if ((m = /^papers\/([^/]+)\/([^/]+)\/notes\.md$/.exec(path))) return `/papers/${m[1]}/${m[2]}/`;
+  if ((m = /^research_papers\/([^/]+)\/notes\.md$/.exec(path))) return `/research-papers/${m[1]}/`;
   if ((m = /^guides\/([^/]+)\/topics\/([^/]+)\.md$/.exec(path))) return `/repo/${m[1]}/topics/${m[2]}/`;
   if ((m = /^guides\/([^/]+)\/(overview|architecture|conventions)\.md$/.exec(path)))
     return `/repo/${m[1]}/bedrock/${m[2]}/`;

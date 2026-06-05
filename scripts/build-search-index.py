@@ -50,7 +50,7 @@ except ImportError:
 
 
 CARTOGRAPH_ROOT = Path(os.environ.get("CARTOGRAPH_ROOT") or Path(__file__).resolve().parent.parent)
-CONTENT_DIRS = ["guides", "episodes", "research", "papers", "designs", "learn", "diary", "claude-designs"]
+CONTENT_DIRS = ["guides", "episodes", "research", "papers", "research_papers", "designs", "learn", "diary", "claude-designs"]
 SKIP_DIRS = {"node_modules", "dist", ".git", "__pycache__", ".cartograph"}
 
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -131,6 +131,8 @@ def _infer_layer(rel: str) -> str | None:
     if rel.startswith("research/"):
         return "research"
     if rel.startswith("papers/"):
+        return "paper"
+    if rel.startswith("research_papers/"):
         return "paper"
     if rel.startswith("designs/") or rel.startswith("claude-designs/"):
         return "design"

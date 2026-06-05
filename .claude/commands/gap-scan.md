@@ -182,6 +182,14 @@ Body: the question; the capability dimensions used; the gap matrix; the
 prioritized opportunities with entry points + next actions; **what's verified vs
 speculative**; open questions for a future scan.
 
+**This roadmap is scaffolding, not a standing artifact.** Once `/propose` turns
+its backlog into actual proposals, the consolidated roadmap is folded into them
+and **removed** — the gaps then live inside the proposals (each proposal is a
+gap→build), and a proposal never carries a separate "Gap analysis" section. See
+`proposals/README.md` → *Anti-bloat & firewall*. The per-concept dossiers this
+roadmap was synthesized from stay as evidence; only the consolidated roadmap
+folds.
+
 ## Phase 6 — Episode + seam
 
 - Episode (`episodes/<YYYY-MM>/<today>-<slug>.md`, standard frontmatter incl.

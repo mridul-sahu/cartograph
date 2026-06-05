@@ -34,7 +34,7 @@ const primaryNav = [
   { href: '/prs/',       label: 'prs',      match: (p: string) => p.startsWith('/prs') },
   { href: '/repo/',      label: 'repos',    match: (p: string) => p.startsWith('/repo/') || p.startsWith('/browse/') || p.startsWith('/setups/') || p.startsWith('/ramp-up/') },
   { href: '/episodes/',  label: 'episodes', match: (p: string) => p.startsWith('/episodes') || p.startsWith('/sessions') },
-  { href: '/library/',   label: 'library',  match: (p: string) => p.startsWith('/library') || p.startsWith('/designs') || p.startsWith('/papers') || p.startsWith('/research') || p.startsWith('/walkthroughs') || p.startsWith('/drafts') },
+  { href: '/library/',   label: 'library',  match: (p: string) => p.startsWith('/library') || p.startsWith('/designs') || p.startsWith('/papers') || p.startsWith('/research/') || p.startsWith('/walkthroughs') || p.startsWith('/drafts') },
   { href: '/proposals/', label: 'proposals', match: (p: string) => p.startsWith('/proposals') },
   { href: '/seams/',     label: 'seams',    match: (p: string) => p.startsWith('/seams') },
   { href: '/promotions/', label: 'promotions', match: (p: string) => p.startsWith('/promotions') },
@@ -74,16 +74,16 @@ const repos = REPOS;
   </head>
   <body class="min-h-screen flex flex-col">
     <header class="border-b-2 border-border bg-bg sticky top-0 z-30">
-      {/* Primary nav — 6 items + theme toggle on the right. Nothing else. */}
-      <div class="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
+      {/* Primary nav + ⌘K / health / settings / theme on the right. */}
+      <div class="mx-auto flex max-w-7xl items-center gap-3 px-6 py-3">
         <a href="/" class="flex items-center gap-3 no-underline flex-shrink-0" aria-label="cartograph home">
           <Wordmark />
         </a>
-        <nav aria-label="Primary" class="hidden md:flex items-center gap-0.5 font-mono text-xs flex-1 min-w-0">
+        <nav aria-label="Primary" class="hidden md:flex items-center gap-0 font-mono text-xs flex-1 min-w-0 overflow-x-auto">
           {primaryNav.map((item) => (
             <a
               href={item.href}
-              class={`px-3 py-1.5 whitespace-nowrap ${item.match(pathname) ? 'border-b-[3px] border-accent text-accent' : 'text-muted hover:text-fg'}`}
+              class={`px-2 py-1.5 whitespace-nowrap ${item.match(pathname) ? 'border-b-[3px] border-accent text-accent' : 'text-muted hover:text-fg'}`}
             >{item.label}</a>
           ))}
         </nav>

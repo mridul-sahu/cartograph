@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
-type Kind = 'design' | 'paper' | 'research' | 'walkthrough' | 'draft' | 'ramp-up';
+type Kind = 'design' | 'paper' | 'research-paper' | 'research' | 'walkthrough' | 'draft' | 'ramp-up';
 
 interface Entry {
   kind: Kind;
@@ -99,9 +99,33 @@ function walkFlatDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
   return out;
 }
 
+// research_papers/<slug>/notes.md — flat (no repo level), one notes.md per slug.
+function walkSlugNotesDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
+  const out: Entry[] = [];
+  if (!existsSync(baseDir)) return out;
+  for (const slug of readdirSync(baseDir)) {
+    const slugDir = join(baseDir, slug);
+    if (!statSync(slugDir).isDirectory()) continue;
+    const file = join(slugDir, 'notes.md');
+    if (!existsSync(file)) continue;
+    const text = readFileSync(file, 'utf8');
+    const fm = readFrontmatter(text);
+    out.push({
+      kind,
+      slug,
+      title: (typeof fm.title === 'string' && fm.title) || readH1(text) || slug,
+      href: `/${hrefPrefix}/${slug}/`,
+      date: fm.last_revised || fm.date,
+      lead: readLeadParagraph(text),
+    });
+  }
+  return out;
+}
+
 const entries: Entry[] = [
   ...walkRepoDir('design',   join(ROOT, 'designs'),       'designs'),
   ...walkRepoDir('paper',    join(ROOT, 'papers'),        'papers'),
+  ...walkSlugNotesDir('research-paper', join(ROOT, 'research_papers'), 'research-papers'),
   ...walkRepoDir('research', join(ROOT, 'research'),      'research'),
   ...walkFlatDir('walkthrough', join(ROOT, 'learn/walkthroughs'), 'walkthroughs'),
   ...walkFlatDir('draft',       join(ROOT, 'learn/drafts'),       'drafts'),
@@ -129,73 +153,110 @@ if (existsSync(rampupDir)) {
 
 entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-const url = new URL(Astro.request.url);
-const filterKind = url.searchParams.get('type');
-const filterRepo = url.searchParams.get('repo');
-const filtered = entries.filter((e) => {
-  if (filterKind && e.kind !== filterKind) return false;
-  if (filterRepo && e.repo !== filterRepo) return false;
-  return true;
-});
-
-const allKinds: Kind[] = ['design', 'paper', 'research', 'walkthrough', 'draft', 'ramp-up'];
+// Filtering is CLIENT-SIDE. This is a static build, so ?type=/?repo= query
+// params don't exist at build time — the old `Astro.request.url` filter was
+// always inert (every facet showed all docs). Every entry renders with
+// data-kind/data-repo; the inline script below reads the URL + chip clicks and
+// shows/hides rows live, keeping the URL shareable.
+const allKinds: Kind[] = ['design', 'paper', 'research-paper', 'research', 'walkthrough', 'draft', 'ramp-up'];
 const allRepos = Array.from(new Set(entries.map((e) => e.repo).filter(Boolean))).sort() as string[];
+const totalCount = entries.length;
 ---
 
 <Base title="library" breadcrumbs={[{ label: 'library' }]}>
   <section class="mb-6">
     <h1 class="text-3xl font-bold tracking-tight">Library</h1>
     <p class="mt-2 text-muted text-base max-w-2xl">
-      Designs, papers, research notes, walkthroughs, drafts, and ramp-ups. One
-      faceted index — narrow with the chips below.
+      Designs, papers, captured research papers, research notes, walkthroughs,
+      drafts, and ramp-ups. One faceted index — narrow with the chips below.
     </p>
   </section>
 
   <Card variant="plain" padded={true}>
     <div class="flex flex-wrap gap-2 mb-2">
       <span class="font-mono text-[10px] uppercase tracking-widest text-muted mr-1 mt-1">type</span>
-      <a href="/library/" class={!filterKind ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}>all</a>
+      <button type="button" data-type-chip="" class="lib-chip px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg cursor-pointer">all</button>
       {allKinds.map((k) => (
-        <a
-          href={`/library/?type=${k}${filterRepo ? `&repo=${filterRepo}` : ''}`}
-          class={filterKind === k ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}
-        >{k}</a>
+        <button type="button" data-type-chip={k} class="lib-chip px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg cursor-pointer">{k}</button>
       ))}
     </div>
     <div class="flex flex-wrap gap-2">
       <span class="font-mono text-[10px] uppercase tracking-widest text-muted mr-1 mt-1">repo</span>
-      <a href={filterKind ? `/library/?type=${filterKind}` : '/library/'} class={!filterRepo ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}>all</a>
+      <button type="button" data-repo-chip="" class="lib-chip px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg cursor-pointer">all</button>
       {allRepos.map((r) => (
-        <a
-          href={`/library/?repo=${r}${filterKind ? `&type=${filterKind}` : ''}`}
-          class={filterRepo === r ? 'px-2 py-0.5 font-mono text-xs bg-accent text-accent-fg' : 'px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg'}
-        >{r}</a>
+        <button type="button" data-repo-chip={r} class="lib-chip px-2 py-0.5 font-mono text-xs border-2 border-border text-muted hover:text-fg cursor-pointer">{r}</button>
       ))}
     </div>
   </Card>
 
-  <Card eyebrow={`results · ${filtered.length}`} title="Documents" padded={false}>
-    {filtered.length === 0 ? (
-      <p class="p-5 text-sm text-muted">No documents match these facets.</p>
-    ) : (
-      <ul class="divide-y-2 divide-border-soft">
-        {filtered.map((e, i) => (
-          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
-            <a href={e.href} class="block px-5 py-3 hover:bg-[var(--surface-2)] no-underline text-fg">
-              <div class="flex items-baseline justify-between gap-4">
-                <div class="min-w-0 flex-1">
-                  <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
-                    {e.kind}{e.repo && <> · {e.repo}</>}
-                  </div>
-                  <div class="font-medium">{e.title}</div>
+  <Card eyebrow="results" title="Documents" padded={false}>
+    <div class="px-5 py-2 border-b-2 border-border-soft font-mono text-xs text-muted">
+      showing <span id="lib-count">{totalCount}</span> of {totalCount}
+    </div>
+    <p id="lib-empty" class="p-5 text-sm text-muted hidden">No documents match these facets.</p>
+    <ul class="divide-y-2 divide-border-soft">
+      {entries.map((e, i) => (
+        <li class={i % 2 === 0 ? 'lib-row bg-bg' : 'lib-row bg-[var(--surface-1)]'} data-kind={e.kind} data-repo={e.repo || ''}>
+          <a href={e.href} class="block px-5 py-3 hover:bg-[var(--surface-2)] no-underline text-fg">
+            <div class="flex items-baseline justify-between gap-4">
+              <div class="min-w-0 flex-1">
+                <div class="font-mono text-[10px] uppercase tracking-widest text-muted">
+                  {e.kind}{e.repo && <> · {e.repo}</>}
                 </div>
-                {e.date && <div class="font-mono text-xs text-muted whitespace-nowrap">{e.date}</div>}
+                <div class="font-medium">{e.title}</div>
               </div>
-              {e.lead && <p class="mt-1 text-sm text-muted leading-snug max-w-3xl">{e.lead}</p>}
-            </a>
-          </li>
-        ))}
-      </ul>
-    )}
+              {e.date && <div class="font-mono text-xs text-muted whitespace-nowrap">{e.date}</div>}
+            </div>
+            {e.lead && <p class="mt-1 text-sm text-muted leading-snug max-w-3xl">{e.lead}</p>}
+          </a>
+        </li>
+      ))}
+    </ul>
   </Card>
+
+  <script is:inline>
+    (function () {
+      const params = new URLSearchParams(location.search);
+      let curType = params.get('type') || '';
+      let curRepo = params.get('repo') || '';
+      const rows = Array.from(document.querySelectorAll('.lib-row'));
+      const typeChips = Array.from(document.querySelectorAll('[data-type-chip]'));
+      const repoChips = Array.from(document.querySelectorAll('[data-repo-chip]'));
+      const empty = document.getElementById('lib-empty');
+      const countEl = document.getElementById('lib-count');
+
+      function setChipActive(el, on) {
+        el.classList.toggle('bg-accent', on);
+        el.classList.toggle('text-accent-fg', on);
+        el.classList.toggle('border-2', !on);
+        el.classList.toggle('border-border', !on);
+        el.classList.toggle('text-muted', !on);
+        el.classList.toggle('hover:text-fg', !on);
+      }
+      function apply() {
+        let shown = 0;
+        for (const row of rows) {
+          const okType = !curType || row.getAttribute('data-kind') === curType;
+          const okRepo = !curRepo || row.getAttribute('data-repo') === curRepo;
+          const show = okType && okRepo;
+          row.classList.toggle('hidden', !show);
+          if (show) shown++;
+        }
+        typeChips.forEach((c) => setChipActive(c, (c.getAttribute('data-type-chip') || '') === curType));
+        repoChips.forEach((c) => setChipActive(c, (c.getAttribute('data-repo-chip') || '') === curRepo));
+        if (empty) empty.classList.toggle('hidden', shown !== 0);
+        if (countEl) countEl.textContent = String(shown);
+      }
+      function syncUrl() {
+        const p = new URLSearchParams();
+        if (curType) p.set('type', curType);
+        if (curRepo) p.set('repo', curRepo);
+        const qs = p.toString();
+        history.replaceState(null, '', qs ? location.pathname + '?' + qs : location.pathname);
+      }
+      typeChips.forEach((c) => c.addEventListener('click', () => { curType = c.getAttribute('data-type-chip') || ''; syncUrl(); apply(); }));
+      repoChips.forEach((c) => c.addEventListener('click', () => { curRepo = c.getAttribute('data-repo-chip') || ''; syncUrl(); apply(); }));
+      apply();
+    })();
+  </script>
 </Base>

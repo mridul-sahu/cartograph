@@ -52,6 +52,7 @@ const STATIC_COMMANDS: Command[] = [
   { id: 'nav-repos', group: 'navigate', label: 'Repos', hint: '/repo/', run: () => { location.href = '/repo/'; } },
   { id: 'nav-episodes', group: 'navigate', label: 'Episodes', hint: '/episodes/', run: () => { location.href = '/episodes/'; } },
   { id: 'nav-library', group: 'navigate', label: 'Library', hint: '/library/', run: () => { location.href = '/library/'; } },
+  { id: 'nav-proposals', group: 'navigate', label: 'Proposals', hint: '/proposals/', run: () => { location.href = '/proposals/'; } },
   { id: 'nav-seams', group: 'navigate', label: 'Seams', hint: '/seams/', run: () => { location.href = '/seams/'; } },
   { id: 'nav-console', group: 'navigate', label: 'Console', hint: '/console/', run: () => { location.href = '/console/'; } },
   ...REPOS.flatMap((r) => [

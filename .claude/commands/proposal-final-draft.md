@@ -80,6 +80,30 @@ outcome-framed, plain-English-first. Author **`d2` diagram blocks** in the HLD
 (architecture / data flow / pillar map) — the builder renders + embeds them.
 Use blockquote callouts (`> **Impact:** …`) for the green/red rail emphases.
 
+## House style — write like a human, scannable at a glance
+
+The #1 failure mode of these docs is **AI slop**: dense, over-hedged,
+em-dash-chained, everything-bolded prose a human would never write and a reviewer
+can't skim. Every final draft must read like a sharp engineer wrote it, and a
+skimmer must get the whole story from headers + first sentences + tables.
+
+| Avoid (the AI-slop tell) | Do instead |
+|---|---|
+| Em-dash chains — 3 clauses + 2 parentheticals per sentence | One idea per sentence; vary length; ≤ ~25 words |
+| Bolding half the words | Bold ~2 load-bearing terms per section; the rest is plain |
+| Over-hedged superlatives ("the single sharpest datum in the literature", "load-bearing, not cosmetic") | Say it once, plainly; let the number carry it |
+| AI words: *leverage, robust, seamless, the unifying mechanical fact, buildable, crucially, notably* | "How would an engineer say this?" — use those words |
+| Walls of prose packed with inline numbers + citations | Move the evidence into a **table**; keep prose for the argument |
+| The point arrives after three qualifying clauses | **BLUF** — lead each section with the takeaway in one plain sentence |
+
+Structure: short paragraphs (2–4 sentences), generous white space, **tables for
+evidence/comparisons**, bullets for lists, headers that state the takeaway.
+
+**References must be working links.** Every reference is a markdown link —
+`[RLCR — ECE 0.37→0.03](https://arxiv.org/abs/2507.16806)`, never a bare "arXiv
+2507.16806" or a dead path. The builder renders markdown links as clickable
+hyperlinks; bare ids are dead text. Verify each URL resolves.
+
 ## Phase 3 — Build + validate the docx
 
 ```
@@ -95,7 +119,7 @@ margins, `d2` diagrams.
 
 ## Firewall
 
-This docx travels to reviewers. **NEVER** write "Cartograph", "Rudrite", "Claude",
+This docx travels to reviewers. **NEVER** write "Cartograph", "Claude",
 or "Anthropic", and use **no** private absolute filesystem paths (repo-relative
 only) — *unless* the user has explicitly relaxed this for a specific proposal
 (e.g. a capability proposal authorized to cite Anthropic/Claude work). Public

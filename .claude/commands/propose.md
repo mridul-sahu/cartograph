@@ -192,9 +192,11 @@ each finalized before the next begins (the *Lifecycle* table in
 1. **Proposal docx** (`final` → `proposal-docx`). Run `/proposal-final-draft
    <repo> <slug>` — a formal, well-researched docx in the standing structure
    (Introduction / Background / Ecosystem+Impact / HLD / Feasibility & Risk /
-   References), with `d2` diagrams in the HLD; the UI surfaces a **download docx**
-   button. Not a thin render of the markdown — see `proposals/README.md` → *The
-   proposal docx*.
+   References), with `d2` diagrams in the HLD, written in the **human, scannable
+   house style** (no AI slop — BLUF sections, tables for evidence, sparse bolding,
+   working markdown-link references); the UI surfaces a **download docx** button.
+   Not a thin render of the markdown — see `proposals/README.md` → *The proposal
+   docx* and the house-style rule in `/proposal-final-draft`.
 2. **Design docx** (`proposal-docx` → `design-docx`). The formal HLD at
    `designs/<repo>/<slug>/` via the docx flow (CLAUDE.md §3c).
 3. **Implementation** (`design-docx` → `implementing`). `/stack-new <slug>`,

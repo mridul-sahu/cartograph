@@ -60,11 +60,39 @@ import Card from '~/components/Card.astro';
     </div>
     <p class="text-sm text-muted mt-4 max-w-3xl">
       Flow upward: <strong>episodes → topic notes → bedrock</strong>. Each layer up
-      is more distilled, more authoritative, more durable. Plus four supporting
-      layers — <code>designs/</code> (per-feature design docs), <code>research/</code>
-      (external comparisons), <code>papers/</code> (digested external work), and
+      is more distilled, more authoritative, more durable. Around the three
+      core layers sit the supporting layers — <code>research/</code> (external
+      comparisons), <code>papers/</code> (digested external work),
+      <code>proposals/</code> (ambitious build plans), <code>designs/</code>
+      (per-feature design docs), <code>setups/</code> (runnable harnesses), and
       <code>learn/</code> (ramp-ups + walkthroughs + drafts).
     </p>
+
+    <div class="mt-6 max-w-3xl border-2 border-[var(--border-soft)] p-4">
+      <div class="font-mono text-[10px] uppercase tracking-widest text-muted">supporting layer</div>
+      <div class="font-bold text-lg mb-2">proposals</div>
+      <p class="text-sm text-muted mb-2">
+        <code class="break-all">proposals/&lt;repo&gt;/&lt;slug&gt;/</code>. Ambitious,
+        trend-justified build plans — each anchored by a falsifiable
+        <em>investment thesis</em> (why it's worth building, why now). Synthesizes
+        gap analysis, paper analysis, and ecosystem trend reads into a concrete
+        thing to build.
+      </p>
+      <p class="text-sm text-muted mb-2">
+        Proposals are organized as <strong>trees</strong>: an umbrella proposal
+        with nested sub-proposals beneath it, so a large theme decomposes into
+        the pieces that ship it.
+      </p>
+      <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Status lifecycle</div>
+      <p class="text-sm text-muted">
+        Each node moves through a pipeline:
+        <code>gap-analysis</code> → <code>deep-dive</code> → <code>final</code> →
+        <code>proposal-docx</code> → <code>design-docx</code> →
+        <code>implementing</code>. A proposal that survives to <code>final</code>
+        earns a formal proposal document, then a design document, then becomes
+        a build.
+      </p>
+    </div>
   </Card>
 
   <Card eyebrow="02 / chassis" title="The automation chassis (what fires by itself)">
@@ -271,8 +299,16 @@ import Card from '~/components/Card.astro';
         <p class="text-sm text-muted mt-1">Faceted index over designs, papers, research, walkthroughs, drafts, ramp-ups. Filter by type + repo.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/proposals/" class="font-bold text-accent hover:underline">Proposals <code class="text-xs">/proposals/</code></a>
+        <p class="text-sm text-muted mt-1">The build-plan trees — umbrella proposals with nested sub-proposals, each at its stage in the gap-analysis → final → design lifecycle.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/seams/" class="font-bold text-accent hover:underline">Seams <code class="text-xs">/seams/</code></a>
         <p class="text-sm text-muted mt-1">Every cross-repo edge — jax↔xla, jax↔orbax, jax↔tunix — with the file paths and concepts that cross.</p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-3">
+        <a href="/promotions/" class="font-bold text-accent hover:underline">Promotions <code class="text-xs">/promotions/</code></a>
+        <p class="text-sm text-muted mt-1">The promotion activity log + pending episode→topic candidates, with a manual Promote button for cases the auto-cascade didn't fire.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/console/" class="font-bold text-accent hover:underline">Console <code class="text-xs">/console/</code></a>
@@ -311,6 +347,10 @@ import Card from '~/components/Card.astro';
         <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/promote &lt;tag&gt;</td><td class="px-3 py-2 text-muted">≥3 episodes share a tag — distill into a topic note</td></tr>
         <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/episode &lt;title&gt;</td><td class="px-3 py-2 text-muted">Manual episode (preempts the auto-draft)</td></tr>
         <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/seam &lt;a&gt; &lt;b&gt;</td><td class="px-3 py-2 text-muted">Record a cross-repo edge</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/gap-scan &lt;repo&gt; &lt;slug&gt;</td><td class="px-3 py-2 text-muted">Survey an external ecosystem, ground it against one of our libs, emit a prioritized build backlog</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/analyze-paper &lt;repo&gt; &lt;slug&gt;</td><td class="px-3 py-2 text-muted">Deep-analyze a paper into an implementable-concept topic note for a target lib</td></tr>
+        <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/propose &lt;repo&gt; &lt;slug&gt;</td><td class="px-3 py-2 text-muted">Turn gaps + papers + trends into an investment-thesis-backed build proposal (can propose a new repo)</td></tr>
+        <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/proposal-final-draft &lt;slug&gt;</td><td class="px-3 py-2 text-muted">Render a finalized proposal into a formal proposal document</td></tr>
         <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/orient</td><td class="px-3 py-2 text-muted">Force re-inject for current cwd</td></tr>
         <tr class="border-b border-[var(--border-soft)] bg-[var(--surface-1)]"><td class="px-3 py-2 text-accent">/freshness</td><td class="px-3 py-2 text-muted">Per-repo fetch age + drift status</td></tr>
         <tr class="border-b border-[var(--border-soft)]"><td class="px-3 py-2 text-accent">/stack</td><td class="px-3 py-2 text-muted">Show the branch stack tree (uses git-spice if installed)</td></tr>

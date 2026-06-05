@@ -57,6 +57,7 @@ case "$abs" in
   "$CARTOGRAPH_ROOT"/guides/*/overview.md|"$CARTOGRAPH_ROOT"/guides/*/architecture.md|"$CARTOGRAPH_ROOT"/guides/*/conventions.md) layer="bedrock" ;;
   "$CARTOGRAPH_ROOT"/research/*/*.md) layer="research" ;;
   "$CARTOGRAPH_ROOT"/papers/*/*/notes.md) layer="paper" ;;
+  "$CARTOGRAPH_ROOT"/research_papers/*/notes.md) layer="paper" ;;
   *) exit 0 ;;
 esac
 

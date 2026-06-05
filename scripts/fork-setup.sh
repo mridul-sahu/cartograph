@@ -145,6 +145,22 @@ for layer in overview architecture conventions; do
   fi
 done
 
+# 9b. Record the new repo in the cross-repo seams doc. Seam *content* needs real
+# code understanding (written by hand / via `/seam`), but at least make seams.md
+# acknowledge the repo so it stops reading as "not set up" and prompts filling in
+# the edges. Idempotent: only appends when the repo isn't already mentioned.
+SEAMS="$GUIDES/seams.md"
+if [[ -f "$SEAMS" ]] && ! grep -qiE "(^|[^[:alnum:]])$REPO_NAME([^[:alnum:]]|$)" "$SEAMS"; then
+  {
+    printf '\n## %s → ? (stub — fill in)\n\n' "$REPO_NAME"
+    printf '> Added by fork-setup on %s. **%s** is now a tracked repo but its\n' "$TODAY" "$REPO_NAME"
+    printf '> cross-repo seams are not documented yet. Replace this stub: what does\n'
+    printf '> %s consume / what consumes it? Cite `path:NNN` anchors, or run\n' "$REPO_NAME"
+    printf '> `/seam %s <other-repo>` to fill it in.\n' "$REPO_NAME"
+  } >> "$SEAMS"
+  echo "fork-setup: appended a seam stub for '$REPO_NAME' to guides/seams.md (fill it in)"
+fi
+
 # 10. Migrate legacy flat conventions stub if it exists (from older bootstrap).
 LEGACY="$GUIDES/${REPO_NAME}-conventions.md"
 if [[ -f "$LEGACY" ]]; then

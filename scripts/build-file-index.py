@@ -48,7 +48,7 @@ except ImportError:
 
 
 CARTOGRAPH_ROOT = Path(os.environ.get("CARTOGRAPH_ROOT") or Path(__file__).resolve().parent.parent)
-CONTENT_DIRS = ["guides", "episodes", "research", "papers", "designs", "learn", "diary", "claude-designs"]
+CONTENT_DIRS = ["guides", "episodes", "research", "papers", "research_papers", "designs", "learn", "diary", "claude-designs"]
 SKIP_DIRS = {"node_modules", "dist", ".git", "__pycache__", ".cartograph"}
 
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -97,6 +97,27 @@ def extract_files_touched(fm: dict[str, Any]) -> list[str]:
     return [str(item).strip() for item in v if isinstance(item, str) and item.strip()]
 
 
+def extract_code_refs_text(fm: dict[str, Any]) -> str:
+    """Flatten a ``code_refs`` frontmatter field (the paper-note /
+    research_papers "where it lives in real code" schema) into a text blob so
+    the anchor regex pulls ``path.py:NNN`` refs out of it exactly as it does
+    from the body. Entries may be plain strings or dicts carrying the path
+    under a common key."""
+    v = fm.get("code_refs")
+    if not isinstance(v, list):
+        return ""
+    parts: list[str] = []
+    for item in v:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            for k in ("path", "file", "ref", "code", "location"):
+                if isinstance(item.get(k), str):
+                    parts.append(item[k])
+                    break
+    return "\n".join(parts)
+
+
 def extract_body_anchors(body: str) -> dict[str, set[int]]:
     """Return {path: set(line_numbers)}; line_numbers empty set if cited without :NNN."""
     out: dict[str, set[int]] = {}
@@ -134,6 +155,23 @@ def build_index(root: Path) -> dict[str, Any]:
             by_file.setdefault(fp, []).append(entry)
             if repo:
                 by_repo.setdefault(repo, set()).add(fp)
+
+        # frontmatter code_refs (paper-note / research_papers schema): same
+        # ``path.py:NNN`` shape as body anchors, declared in frontmatter instead
+        # of cited inline. This is what makes /whatknows surface a paper note
+        # for the code it points at.
+        for path, lines in extract_body_anchors(extract_code_refs_text(fm)).items():
+            if path.endswith(".md"):
+                continue
+            entry = {
+                "note": rel_note,
+                "layer": layer,
+                "source": "frontmatter",
+                "anchors": sorted(lines),
+            }
+            by_file.setdefault(path, []).append(entry)
+            if repo:
+                by_repo.setdefault(repo, set()).add(path)
 
         # body anchors
         for path, lines in extract_body_anchors(body).items():
@@ -232,6 +270,8 @@ def _infer_layer(rel: str) -> str | None:
     if rel.startswith("research/"):
         return "research"
     if rel.startswith("papers/"):
+        return "paper"
+    if rel.startswith("research_papers/"):
         return "paper"
     if rel.startswith("designs/") or rel.startswith("claude-designs/"):
         return "design"
