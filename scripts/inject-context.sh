@@ -11,8 +11,18 @@
 
 set -euo pipefail
 
+# Kill switch — the eval harness uses this to measure sessions without
+# orientation (injection on vs off). Also handy for debugging hook cost.
+[[ "${CARTOGRAPH_INJECT_DISABLE:-0}" == "1" ]] && exit 0
+
 source "$(dirname "$0")/lib/load-config.sh"
 source "$(dirname "$0")/lib/note-usage.sh"
+
+RANKER="$(dirname "$0")/lib/rank-notes.py"
+# lean (default): top-1 note in full + a menu of the next N-1 (title,
+# summary, path) the agent pulls with Read. full: legacy top-3 full bodies.
+INJECT_MODE="${CARTOGRAPH_INJECT_MODE:-lean}"
+INJECT_TOP="${CARTOGRAPH_INJECT_TOP:-8}"
 
 WORKSPACE="$CARTOGRAPH_ROOT/workspace"
 GUIDES="$CARTOGRAPH_ROOT/guides"
@@ -25,6 +35,10 @@ SESSION_LOG="$(cat "$CARTOGRAPH_ROOT/sessions/.current-session" 2>/dev/null || t
 # Helper used at each layer below to record an injection in the session log
 # (for end-of-session usage analysis) and bump the per-note counter.
 record_injection() {
+  # Eval runs set CARTOGRAPH_USAGE_FREEZE=1: they must see normal injection
+  # but never write usage counters or the interactive session's log —
+  # 54 graded runs would otherwise bury the real usage signal.
+  [[ "${CARTOGRAPH_USAGE_FREEZE:-0}" == "1" ]] && return 0
   local note_path="$1"
   # Relative path inside cartograph root for consistent keys.
   local rel="${note_path#$CARTOGRAPH_ROOT/}"
@@ -229,110 +243,65 @@ EOF
     | grep -vxE "$stop" \
     | sort -u)"
 
-  # Layer 3: top-3 topic notes by keyword hit count + usage boost.
-  # Notes that got injected AND whose cited files were Read'd in past sessions
-  # earn a small additive boost — proven-useful notes rise above equally-
-  # relevant-by-keyword peers. See scripts/lib/note-usage.sh for the boost shape.
-  TOPICS_DIR="$GUIDES/$REPO/topics"
-  if [[ -d "$TOPICS_DIR" ]] && [[ -n "$keywords" ]]; then
-    best_topics="$(
-      for topic in "$TOPICS_DIR"/*.md; do
-        [[ -f "$topic" ]] || continue
-        score=0
-        while IFS= read -r kw; do
-          [[ -z "$kw" ]] && continue
-          if grep -iqw -- "$kw" "$topic" 2>/dev/null; then
-            score=$((score + 1))
-          fi
-        done <<<"$keywords"
-        if (( score > 0 )); then
-          rel="${topic#$CARTOGRAPH_ROOT/}"
-          boost="$(note_usage_score_boost "$rel" 2>/dev/null || echo 0)"
-          printf '%d\t%s\n' "$((score + boost))" "$topic"
-        fi
-      done | sort -rn -k1,1 | head -3 | cut -f2
-    )"
-    if [[ -n "$best_topics" ]]; then
-      while IFS= read -r t; do
-        [[ -z "$t" ]] && continue
-        rel="${t#$CARTOGRAPH_REAL/}"
-        echo "--- $rel ---"
-        cat "$t"
-        echo
-        record_injection "$t"
-      done <<<"$best_topics"
+  # Cross-layer dedup ledger: every layer appends the note relpaths it
+  # emitted; later layers (menus, file-index, BM25) skip anything already
+  # surfaced this turn. Cleaned up when the subshell exits.
+  emitted_file="$(mktemp "${TMPDIR:-/tmp}/cartograph-emitted.XXXXXX")"
+  trap 'rm -f "$emitted_file"' EXIT
+
+  bm25_index="$CARTOGRAPH_REAL/.cartograph/index/bm25.json"
+
+  # Run rank-notes.py for one layer and record every emitted note in the
+  # session log + usage counters. $1=dir $2=emit-mode $3=label $4=extra args...
+  rank_layer() {
+    local dir="$1" emit="$2" label="$3"; shift 3
+    local before after
+    # grep -c prints the count even when it's 0 (exit 1) — ignore the rc,
+    # don't `|| echo 0` (that would append a second line and break (( )) ).
+    before="$(grep -c . "$emitted_file" 2>/dev/null)" || true
+    before="${before:-0}"
+    printf '%s\n' "$keywords" | python3 "$RANKER" \
+      --root "$CARTOGRAPH_ROOT" --dir "$dir" --emit "$emit" --label "$label" \
+      --top "$INJECT_TOP" --index "$bm25_index" \
+      --usage-file "$NOTE_USAGE_FILE" --emitted-file "$emitted_file" \
+      "$@" 2>/dev/null || true
+    after="$(grep -c . "$emitted_file" 2>/dev/null)" || true
+    after="${after:-0}"
+    if (( after > before )); then
+      tail -n "$((after - before))" "$emitted_file" | while IFS= read -r rel; do
+        [[ -n "$rel" ]] && record_injection "$CARTOGRAPH_ROOT/$rel"
+      done
     fi
+  }
+
+  layer_emit="full1+menu"
+  layer_top="$INJECT_TOP"
+  if [[ "$INJECT_MODE" == "full" ]]; then
+    layer_emit="full"
+    layer_top=3
+  fi
+  INJECT_TOP="$layer_top"
+
+  # Layer 3: topic notes — IDF-weighted keyword overlap + usage boost,
+  # top-1 in full + a menu of the rest (lean mode). Proven-useful notes
+  # rise via the usage boost; notes injected 5+ times and never used sink.
+  if [[ -n "$keywords" ]]; then
+    rank_layer "guides/$REPO/topics" "$layer_emit" "topic"
   fi
 
-  # Layer 4: top-3 episodes (non-superseded, non-distilled, repo-scoped, keyword-matched)
-  if [[ -d "$EPISODES" ]] && [[ -n "$keywords" ]]; then
-    best_episodes="$(
-      while IFS= read -r -d '' ep; do
-        # Filter: skip if explicitly retired
-        if grep -qE '^superseded_by:[[:space:]]*[^~[:space:]]' "$ep" 2>/dev/null; then continue; fi
-        if grep -qE '^distilled_into:[[:space:]]*[^~[:space:]]' "$ep" 2>/dev/null; then continue; fi
-        # Filter: only if repo matches (frontmatter `repo: <REPO>`); accept if no repo field
-        if grep -qE '^repo:' "$ep" 2>/dev/null; then
-          if ! grep -qE "^repo:[[:space:]]*$REPO\b" "$ep" 2>/dev/null; then continue; fi
-        fi
-        score=0
-        while IFS= read -r kw; do
-          [[ -z "$kw" ]] && continue
-          if grep -iqw -- "$kw" "$ep" 2>/dev/null; then
-            score=$((score + 1))
-          fi
-        done <<<"$keywords"
-        if (( score > 0 )); then
-          # Tiebreak by filename (YYYY-MM-DD prefix sorts as recency).
-          printf '%d\t%s\t%s\n' "$score" "$(basename "$ep")" "$ep"
-        fi
-      done < <(find "$EPISODES" -type f -name '*.md' -print0 2>/dev/null) \
-      | sort -rn -k1,1 -k2,2 | head -3 | cut -f3
-    )"
-    if [[ -n "$best_episodes" ]]; then
-      while IFS= read -r e; do
-        [[ -z "$e" ]] && continue
-        rel="${e#$CARTOGRAPH_REAL/}"
-        echo "--- $rel ---"
-        cat "$e"
-        echo
-      done <<<"$best_episodes"
-    fi
+  # Layer 4: episodes (non-superseded, non-distilled, non-rejected,
+  # repo-scoped). Same shape as topics.
+  if [[ -n "$keywords" ]]; then
+    rank_layer "episodes" "$layer_emit" "episode" --recursive --episode-filters --repo "$REPO"
   fi
 
-  # Layer 5: top-3 research notes by keyword overlap (repo-scoped)
-  # Research notes are intermediate exploratory notes (external context,
-  # tool comparisons, design rationale) — surfacing them avoids the trap
-  # of starting a brand-new research note when an existing one already
-  # covers the topic.
-  RESEARCH_DIR="$CARTOGRAPH_ROOT/research/$REPO"
-  if [[ -d "$RESEARCH_DIR" ]] && [[ -n "$keywords" ]]; then
-    best_research="$(
-      for note in "$RESEARCH_DIR"/*.md; do
-        [[ -f "$note" ]] || continue
-        score=0
-        while IFS= read -r kw; do
-          [[ -z "$kw" ]] && continue
-          if grep -iqw -- "$kw" "$note" 2>/dev/null; then
-            score=$((score + 1))
-          fi
-        done <<<"$keywords"
-        if (( score > 0 )); then
-          printf '%d\t%s\n' "$score" "$note"
-        fi
-      done | sort -rn -k1,1 | head -3 | cut -f2
-    )"
-    if [[ -n "$best_research" ]]; then
-      echo "[research notes] existing notes that already cover keywords in your prompt"
-      echo "[research notes] — UPDATE these in place instead of writing a new note."
-      while IFS= read -r r; do
-        [[ -z "$r" ]] && continue
-        rel="${r#$CARTOGRAPH_REAL/}"
-        echo "--- $rel ---"
-        cat "$r"
-        echo
-      done <<<"$best_research"
-    fi
+  # Layer 5: research notes (repo-scoped) — menu only; they exist so the
+  # agent UPDATES an existing note instead of starting a duplicate, which
+  # the path + summary already enables.
+  if [[ -n "$keywords" ]]; then
+    research_emit="menu"
+    [[ "$INJECT_MODE" == "full" ]] && research_emit="full"
+    rank_layer "research/$REPO" "$research_emit" "research"
   fi
 
   # Layer 5a: path-token reverse-index lookup
@@ -346,12 +315,17 @@ EOF
       | grep -oE '[a-zA-Z0-9_/.\-]+\.(py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl)' \
       | sort -u || true)"
     if [[ -n "$path_tokens" ]]; then
-      python3 - "$by_file_index" <<PY 2>/dev/null
+      python3 - "$by_file_index" "$emitted_file" <<PY 2>/dev/null
 import json, sys
 idx = json.loads(open(sys.argv[1]).read())
 by_file = idx.get("by_file", {})
+try:
+    emitted = {l.strip() for l in open(sys.argv[2]) if l.strip()}
+except OSError:
+    emitted = set()
 tokens = """${path_tokens}""".strip().split("\n")
 printed_header = False
+new_emits = []
 LAYER_RANK = {"bedrock": 0, "topic": 1, "episode": 2, "research": 3, "paper": 4, "design": 5, "learn": 6}
 for tok in tokens:
     tok = tok.strip()
@@ -360,28 +334,34 @@ for tok in tokens:
     hits = [(fp, e) for fp, e in by_file.items() if tok in fp]
     if not hits:
         continue
+    # Use the most-specific (longest indexed-path) hit per token.
+    hits.sort(key=lambda x: -len(x[0]))
+    fp, entries = hits[0]
+    entries = sorted(entries, key=lambda e: LAYER_RANK.get(e.get("layer") or "", 99))
+    entries = [e for e in entries if e["note"] not in emitted]
+    if not entries:
+        continue
     if not printed_header:
         print("[file-index] notes citing path-shaped tokens in your prompt")
         print("[file-index] (auto-surfaced reverse index — read these before opening the file)")
         printed_header = True
-    # Use the most-specific (longest indexed-path) hit per token.
-    hits.sort(key=lambda x: -len(x[0]))
-    fp, entries = hits[0]
     print(f"  ▸ {tok}  →  {fp}")
-    entries = sorted(entries, key=lambda e: LAYER_RANK.get(e.get("layer") or "", 99))
     for e in entries[:3]:
         layer = (e.get("layer") or "?")[:7]
         print(f"      [{layer:7}] {e['note']}")
+        new_emits.append(e["note"])
 if printed_header:
     print()
+if new_emits:
+    with open(sys.argv[2], "a") as fh:
+        fh.writelines(n + "\n" for n in dict.fromkeys(new_emits))
 PY
     fi
   fi
 
   # Layer 5b: BM25 rerank pass (catches semantic matches keyword overlap misses)
-  bm25_index="$CARTOGRAPH_REAL/.cartograph/index/bm25.json"
   if [[ -f "$bm25_index" ]] && [[ -n "$prompt" ]]; then
-    python3 - "$bm25_index" "$REPO" "$CARTOGRAPH_REAL" <<PY 2>/dev/null
+    python3 - "$bm25_index" "$REPO" "$CARTOGRAPH_REAL" "$emitted_file" <<PY 2>/dev/null
 import json, sys, importlib.util
 PROJECT = sys.argv[3]
 spec = importlib.util.spec_from_file_location("_bm25", f"{PROJECT}/scripts/build-search-index.py")
@@ -389,8 +369,13 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 idx = json.loads(open(sys.argv[1]).read())
 repo = sys.argv[2] if sys.argv[2] else None
+try:
+    emitted = {l.strip() for l in open(sys.argv[4]) if l.strip()}
+except OSError:
+    emitted = set()
 prompt_text = """${prompt//\"/\\\"}"""
-hits = mod.bm25_search(idx, prompt_text, k=5, repo=repo)
+hits = mod.bm25_search(idx, prompt_text, k=8, repo=repo)
+hits = [h for h in hits if h["path"] not in emitted][:5]
 if hits:
     print("[bm25] semantic hits ranked by BM25 (complements keyword overlap above)")
     for h in hits:

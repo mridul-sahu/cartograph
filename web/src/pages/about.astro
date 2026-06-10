@@ -10,9 +10,10 @@ import Card from '~/components/Card.astro';
       Cartograph is the notebook that <span class="text-accent">carries understanding forward</span>.
     </h1>
     <p class="text-lg text-muted leading-relaxed">
-      Five large open-source codebases — <code>jax</code>, <code>xla</code>,
-      <code>orbax</code>, <code>tunix</code>, <code>tokamax</code> — and one solo
-      developer working across them through Claude. The bottleneck isn't file
+      Six large open-source codebases — <code>jax</code>, <code>xla</code>,
+      <code>orbax</code>, <code>tunix</code>, <code>tokamax</code>,
+      <code>sglang</code> — and one solo developer working across them
+      through Claude. The bottleneck isn't file
       access; Claude already has fast tools. The bottleneck is that
       <em>nothing persists between sessions</em>. Every Monday's exploration
       vanishes by Friday. Every "I figured this out" insight has to be
@@ -113,11 +114,15 @@ import Card from '~/components/Card.astro';
       <li class="border-2 border-[var(--border-soft)] p-3">
         <div class="font-mono text-xs font-bold mb-1">UserPromptSubmit</div>
         <p class="text-sm text-muted">
-          On every turn: injects bedrock + topic notes + episodes ranked by
-          keyword overlap, plus BM25 semantic rerank, plus the file-reverse
-          lookup if the prompt contains any path-shaped token, plus a one-line
-          reminder of available tools. The agent receives orientation before
-          generating.
+          On every turn: injects bedrock in full, then a <strong>lean menu</strong>
+          per layer — the single best topic / episode / research match in full
+          plus title-and-summary menus of the next seven, ranked by
+          IDF-weighted keyword overlap with a usage boost (notes proven useful
+          rise; notes surfaced five times and never followed sink). All layers
+          dedup against each other, BM25 reranks what keywords missed, and the
+          file-reverse lookup fires on any path-shaped token. The agent
+          receives orientation before generating, at a fraction of the old
+          token cost.
         </p>
       </li>
       <li class="border-2 border-[var(--border-soft)] p-3">
@@ -133,8 +138,10 @@ import Card from '~/components/Card.astro';
         <div class="font-mono text-xs font-bold mb-1">Stop</div>
         <p class="text-sm text-muted">
           Auto-drafts an episode if the session touched ≥3 files but wrote
-          none. Audits chassis utilization. Commits + pushes any content the
-          session wrote.
+          none. Audits chassis utilization and attributes usage back to every
+          injected note — a note counts as <em>used</em> when the session Read
+          it or a file it cites, and that record feeds the next session's
+          ranking. Commits + pushes any content the session wrote.
         </p>
       </li>
       <li class="border-2 border-[var(--border-soft)] p-3">
@@ -272,6 +279,58 @@ import Card from '~/components/Card.astro';
     </div>
   </Card>
 
+  <Card eyebrow="02c / self-measurement" title="The loops that prove it works (and catch it failing)">
+    <p class="text-sm text-muted mb-4 max-w-3xl">
+      A knowledge system that only accumulates is a filing cabinet. These four
+      mechanisms make the claims falsifiable and the failures visible:
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Eval harness — golden questions</div>
+        <p class="text-sm text-muted">
+          <code>scripts/eval/run-eval.sh</code> holds 27 architecture questions
+          across the six repos, each graded by regex groups. Every question
+          runs as a headless session twice — orientation on vs
+          <code>CARTOGRAPH_INJECT_DISABLE=1</code> — and the per-arm deltas in
+          score, turns, and wall time are the regression gate for every
+          retrieval change. Results time-series under
+          <code>.cartograph/eval/</code>.
+        </p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Usage feedback</div>
+        <p class="text-sm text-muted">
+          Every injection is recorded; every follow-up Read is attributed.
+          Notes that earn their place rank higher next time; notes injected
+          five times and never followed take a ranking penalty. Per-session
+          <code>&lcub;injected, used&rcub;</code> records land in
+          <code>usage-log.jsonl</code> for offline analysis.
+        </p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Central error feed</div>
+        <p class="text-sm text-muted">
+          Chassis failures that used to vanish into <code>|| true</code> now
+          append to <code>.cartograph/errors.log</code> and surface on the
+          <a href="/console/" class="text-accent hover:underline">console</a>.
+          Curation drains account per task — a failed task stays queued and
+          retries instead of being silently dropped with its batch.
+        </p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Supervision + nightly maintenance</div>
+        <p class="text-sm text-muted">
+          <code>scripts/setup-launchd.sh</code> puts the server under
+          KeepAlive supervision and schedules a 03:30 maintenance pass:
+          drift auto-revision, content lint, anchor-gap fixes, curation
+          drain, session archival. The injection-cost card on
+          <a href="/" class="text-accent hover:underline">Home</a> flags any
+          repo whose bedrock outgrows its token budget.
+        </p>
+      </div>
+    </div>
+  </Card>
+
   <Card eyebrow="03 / surfaces for humans" title="The local UI you're using right now">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl">
       <div class="border-2 border-[var(--border-soft)] p-3">
@@ -280,7 +339,7 @@ import Card from '~/components/Card.astro';
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/prs/" class="font-bold text-accent hover:underline">PRs <code class="text-xs">/prs/</code></a>
-        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the five tracked upstreams. State, mergeable, review decision, age.</p>
+        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the six tracked upstreams. State, mergeable, review decision, age.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/repo/" class="font-bold text-accent hover:underline">Repos <code class="text-xs">/repo/</code></a>
@@ -312,7 +371,7 @@ import Card from '~/components/Card.astro';
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/console/" class="font-bold text-accent hover:underline">Console <code class="text-xs">/console/</code></a>
-        <p class="text-sm text-muted mt-1">Review queue, drift reports, promotion candidates, lint debt, diary. The "what is the chassis asking me to do?" surface.</p>
+        <p class="text-sm text-muted mt-1">Review queue, drift reports, promotion candidates, lint debt, chassis error feed, diary. The "what is the chassis asking me to do?" surface.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/console/review/" class="font-bold text-accent hover:underline">Review everything <code class="text-xs">/console/review/</code></a>
@@ -412,7 +471,7 @@ import Card from '~/components/Card.astro';
           Then <code>/stack-submit</code> force-pushes every updated branch
           with <code>--force-with-lease</code>. Throughout, the
           <a href="/prs/" class="text-accent hover:underline">/prs/</a> page
-          shows live status across all five upstreams.
+          shows live status across all six upstreams.
         </p>
       </div>
 

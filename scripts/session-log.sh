@@ -21,6 +21,9 @@ set -uo pipefail
 CARTOGRAPH_ROOT="${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}"
 SESSIONS_DIR="$CARTOGRAPH_ROOT/sessions"
 
+# shellcheck source=lib/errors.sh
+source "$(dirname "$0")/lib/errors.sh"
+
 MODE="${1:-start}"
 shift || true
 
@@ -217,17 +220,20 @@ publish_content() {
     # Narrow add — only the content dirs, never the whole tree.
     git add -- guides episodes research papers learn 2>/dev/null || true
     if ! git diff --cached --quiet 2>/dev/null; then
-      git commit -q -m "content: session-written cartograph updates" 2>/dev/null || true
+      git commit -q -m "content: session-written cartograph updates" 2>/dev/null \
+        || cg_log_error session-log "publish_content: git commit failed"
       git push origin main 2>/dev/null \
         || { git pull --rebase origin main 2>/dev/null \
-             && git push origin main 2>/dev/null; }
+             && git push origin main 2>/dev/null; } \
+        || cg_log_error session-log "publish_content: git push failed (after pull-rebase retry)"
     fi
     # The turn changed content — refresh the static site regardless of
     # whether the commit found something stageable. session-log writes
     # run inside subshells with redirected output, so we don't surface
     # the notify-server warning here (it would clutter every session
-    # commit). Silent fallback is correct for this path.
-    curl -fsS -X POST --connect-timeout 1 http://127.0.0.1:47777/api/rebuild >/dev/null 2>&1 || true
+    # commit). Failures are recorded in .cartograph/errors.log instead.
+    curl -fsS -X POST --connect-timeout 1 http://127.0.0.1:47777/api/rebuild >/dev/null 2>&1 \
+      || cg_log_error session-log "publish_content: rebuild POST to 127.0.0.1:47777 failed (server down?)"
   ) >/dev/null 2>&1 || true
 }
 

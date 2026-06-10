@@ -20,12 +20,22 @@ detects your current scope from `cwd` and injects:
 - All bedrock guides for the current repo:
   `guides/<repo>/{overview,architecture,conventions}.md`.
 - The cross-repo seams: `guides/seams.md`.
-- The top-3 topic notes (`guides/<repo>/topics/*.md`) by keyword overlap
-  with your prompt.
-- The top-3 non-superseded, non-distilled episodes
-  (`episodes/YYYY-MM/*.md`) by keyword overlap.
-- The top-3 research notes (`research/<repo>/*.md`) by keyword overlap.
+- Topic notes (`guides/<repo>/topics/*.md`): the single best match in
+  FULL, plus a **menu** of the next 7 (title + summary + path).
+- Episodes (`episodes/YYYY-MM/*.md`, non-superseded, non-distilled,
+  repo-scoped): same shape — best match full, menu of the rest.
+- Research notes (`research/<repo>/*.md`): menu only.
 - A revision reminder.
+
+**Menus are mandatory follow-ups, not decoration.** A menu line means
+"this note likely covers part of your task" — `Read` every menu entry
+that touches your task before deriving anything from upstream code.
+Following a menu is recorded as that note being *useful*; ignoring
+relevant entries corrupts the usage signal that ranks future
+injections.
+
+Ranking is IDF-weighted keyword overlap with a usage boost for notes
+proven useful in past sessions; layers dedup against each other.
 
 **Trust the injection.** Don't re-fetch the bedrock yourself unless the
 injection is missing or the keyword match clearly missed relevant
@@ -38,8 +48,8 @@ content. If you find guides are wrong or thin, that is a signal to
 
 **This is a hard rule.** You do not read upstream code to work out how
 something behaves until you have checked cartograph first. The
-orientation injection is the *floor* — the top-3 keyword matches
-against your prompt — never the ceiling.
+orientation injection is the *floor* — the keyword matches against your
+prompt (one full note + a menu per layer) — never the ceiling.
 
 Every task in a repo, in this exact order:
 

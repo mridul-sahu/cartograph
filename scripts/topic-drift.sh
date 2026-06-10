@@ -9,7 +9,7 @@
 #
 # Two stages:
 #   A) cheap: `git log -- <file>` since last_revised → file flagged
-#   B) line-aware: `git log -L<NNN>,+5:<file>` → citation flagged
+#   B) line-aware: `git log -L<NNN-15>,<NNN+15>:<file>` → citation flagged
 #
 # Stage B only runs on files flagged by stage A.
 #
@@ -85,11 +85,14 @@ process_topic() {
       stable_lines+=("$file${line:+:$line}")
       continue
     fi
-    # Stage B: did the cited line region change?
+    # Stage B: did the cited line region change? ±15 lines — wide enough
+    # to catch the function body around the anchor, not just the line.
     if [[ -n "$line" ]]; then
-      local end_line=$((line + 4))
+      local start_line=$((line - 15))
+      (( start_line < 1 )) && start_line=1
+      local end_line=$((line + 15))
       local line_probe
-      line_probe="$(git -C "$fork_dir" log --since="$last_revised" -L"${line},${end_line}:${file}" 2>/dev/null | head -1)"
+      line_probe="$(git -C "$fork_dir" log --since="$last_revised" -L"${start_line},${end_line}:${file}" 2>/dev/null | head -1)"
       if [[ -n "$line_probe" ]]; then
         changed_lines+=("$file:$line    line region touched ($probe)")
       else

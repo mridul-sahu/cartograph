@@ -117,8 +117,20 @@ def fm_text(fm: dict[str, Any]) -> str:
     return " ".join(pieces)
 
 
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
 def tokenize(text: str) -> list[str]:
-    return [t for t in _TOKEN_RE.findall(text.lower()) if len(t) >= 3 and t not in _STOP]
+    # Split identifiers before lowercasing so AsyncCheckpointer matches a
+    # query for "checkpointer" and type_handlers matches "handlers". The
+    # whole identifier stays a token too, so exact-name queries rank highest.
+    expanded: list[str] = []
+    for word in re.findall(r"[A-Za-z0-9_]+", text):
+        expanded.append(word.lower())
+        parts = [p for chunk in word.split("_") for p in _CAMEL_RE.split(chunk) if p]
+        if len(parts) > 1:
+            expanded.extend(p.lower() for p in parts)
+    return [t for t in expanded if len(t) >= 3 and t not in _STOP]
 
 
 def _infer_layer(rel: str) -> str | None:

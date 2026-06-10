@@ -37,35 +37,57 @@ injected_notes="$(grep -oE '<!-- injected: [^ ]+ -->' "$log" 2>/dev/null | sed -
 reads="$(grep -E '^- [0-9:]+  Read  ' "$log" 2>/dev/null | sed -E 's/^- [0-9:]+  Read  //' | sort -u)"
 [[ -z "$reads" ]] && exit 0
 
-# Extract `path/to/file:NNN` style citations from each injected note (cheap:
-# grep the citation pattern, take just the path). Compare against Reads.
+# A note counts as "used" if either:
+#   a. the note itself was Read this session (menu mode surfaces title +
+#      path; following the menu IS the success signal), or
+#   b. any file the note cites (`path/to/file:NNN`) was Read this session.
 used_count=0
+used_notes=""
 while IFS= read -r note_rel; do
   [[ -z "$note_rel" ]] && continue
   note_abs="$CARTOGRAPH_ROOT/$note_rel"
   [[ -f "$note_abs" ]] || continue
-  # Pull citation paths from the note (anchored `<word>/<path>:line` shape).
-  citations="$(grep -oE '\b[a-zA-Z0-9_./-]+\.(py|go|ts|tsx|js|jsx|rs|c|cc|cpp|h|hpp|java|kt|swift|md|sh|astro|css|html|json|yaml|toml):[0-9]+' "$note_abs" 2>/dev/null \
-    | sed -E 's/:[0-9]+$//' \
-    | sort -u)"
-  [[ -z "$citations" ]] && continue
-  # If any citation path appears in any Read path, this note got "used".
   matched=0
-  while IFS= read -r cit; do
-    [[ -z "$cit" ]] && continue
-    if printf '%s\n' "$reads" | grep -qF "$cit"; then
-      matched=1
-      break
-    fi
-  done <<<"$citations"
+  if printf '%s\n' "$reads" | grep -qF "$note_rel"; then
+    matched=1
+  else
+    # Pull citation paths from the note (anchored `<word>/<path>:line` shape).
+    citations="$(grep -oE '\b[a-zA-Z0-9_./-]+\.(py|go|ts|tsx|js|jsx|rs|c|cc|cpp|h|hpp|java|kt|swift|md|sh|astro|css|html|json|yaml|toml):[0-9]+' "$note_abs" 2>/dev/null \
+      | sed -E 's/:[0-9]+$//' \
+      | sort -u)"
+    while IFS= read -r cit; do
+      [[ -z "$cit" ]] && continue
+      if printf '%s\n' "$reads" | grep -qF "$cit"; then
+        matched=1
+        break
+      fi
+    done <<<"$citations"
+  fi
   if (( matched == 1 )); then
     note_usage_bump_used "$note_rel" >/dev/null 2>&1 || true
     used_count=$((used_count + 1))
+    used_notes+="$note_rel"$'\n'
   fi
 done <<<"$injected_notes"
 
 n_injected="$(printf '%s\n' "$injected_notes" | grep -c . || true)"
-printf '[note-usage] %d notes injected · %d had a cited file Read\n' \
+printf '[note-usage] %d notes injected · %d used (note or cited file Read)\n' \
   "$n_injected" "$used_count" >&2
+
+# Structured per-session record — the time series behind injection-quality
+# analysis (which notes get surfaced but never used, per-session hit rate).
+usage_log="$CARTOGRAPH_ROOT/.cartograph/state/usage-log.jsonl"
+mkdir -p "$(dirname "$usage_log")"
+INJECTED="$injected_notes" USED="$used_notes" SESSION="$log" python3 - "$usage_log" <<'PY' 2>/dev/null || true
+import json, os, sys, datetime
+rec = {
+    "date": datetime.date.today().isoformat(),
+    "session": os.path.basename(os.environ.get("SESSION", "")),
+    "injected": [l for l in os.environ.get("INJECTED", "").split("\n") if l.strip()],
+    "used": [l for l in os.environ.get("USED", "").split("\n") if l.strip()],
+}
+with open(sys.argv[1], "a") as fh:
+    fh.write(json.dumps(rec) + "\n")
+PY
 
 exit 0

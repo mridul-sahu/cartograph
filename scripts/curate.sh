@@ -11,15 +11,25 @@
 #   curate.sh enqueue promote  <repo> <tag>
 #   curate.sh enqueue episode  <repo> <session-log-relpath>
 #   curate.sh enqueue research <repo> <session-log-relpath>
+#   curate.sh enqueue anchor   <repo> <topic-slug>
 #   curate.sh drain        # batch-process everything queued (1 agent)
 #   curate.sh list         # show pending tasks
+#   curate.sh log [n]      # show the last n batch outcomes (default 5)
+#
+# Per-task accounting: every drain writes a manifest to
+# .cartograph/curate-log/<stamp>.batch and the agent reports each task to
+# <stamp>.results. Tasks the agent didn't report as `done` keep their .task
+# file and retry next drain; the miss is recorded in errors.log.
 
 set -uo pipefail
 
 # shellcheck source=lib/headless.sh
 source "$(dirname "$0")/lib/headless.sh"   # also sets CARTOGRAPH_ROOT
+# shellcheck source=lib/errors.sh
+source "$(dirname "$0")/lib/errors.sh"
 
 QUEUE_DIR="$CARTOGRAPH_ROOT/.cartograph/curation-queue"
+CURATE_LOG_DIR="$CARTOGRAPH_ROOT/.cartograph/curate-log"
 
 _cg_sanitize() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-'; }
 
@@ -31,7 +41,7 @@ cg_enqueue() {
     echo "curate enqueue: need <kind> <arg1> <arg2>" >&2; return 2
   }
   case "$kind" in
-    fold|promote|episode|research) : ;;
+    fold|promote|episode|research|anchor) : ;;
     *) echo "curate: unknown kind '$kind'" >&2; return 2 ;;
   esac
   mkdir -p "$QUEUE_DIR"
@@ -43,8 +53,8 @@ cg_enqueue() {
 
 # Append one task's instruction block to the batched prompt (stdout).
 _cg_task_block() {
-  local n="$1" kind="$2" a="$3" b="$4" today="$5"
-  echo "### Task $n — $kind"
+  local n="$1" kind="$2" a="$3" b="$4" today="$5" key="$6"
+  echo "### Task $n — $kind (task key: \`$key\`)"
   echo
   case "$kind" in
     fold)
@@ -95,6 +105,19 @@ with \`auto_drafted: true\` in frontmatter. If the fetches were incidental,
 write nothing for this task and say so in your summary.
 EOF
       ;;
+    anchor)
+      cat <<EOF
+Add missing canonical-file anchors to the topic note \`guides/$a/topics/$b.md\`.
+- Read \`.cartograph/state/anchor-coverage.json\` and find the entry under
+  \`gaps_by_repo.$a\` whose \`slug\` is \`$b\` — its \`missing\` list names the
+  files that related episodes touched but the topic never cites.
+- Read the topic note. For each missing file: if the topic body discusses that
+  file's subsystem, add a \`path:NNN\` anchor where the claim lives (verify the
+  line number against \`workspace/$a/\`). If it does not, skip it — false
+  positive; say so in your results detail.
+- Bump \`last_revised: $today\` only if at least one anchor was added.
+EOF
+      ;;
   esac
   echo
 }
@@ -102,7 +125,11 @@ EOF
 # Hand the whole queue to ONE headless agent.
 cg_drain() {
   cg_autospawn_guard            # no-op unless inside an agent / kill switch on
-  mkdir -p "$QUEUE_DIR"
+  mkdir -p "$QUEUE_DIR" "$CURATE_LOG_DIR"
+
+  # Drop accounting files past the 30-day history window.
+  find "$CURATE_LOG_DIR" -maxdepth 1 -type f \
+    \( -name '*.batch' -o -name '*.results' \) -mtime +30 -delete 2>/dev/null || true
 
   local tasks=() f
   while IFS= read -r f; do tasks+=("$f"); done \
@@ -117,6 +144,15 @@ cg_drain() {
     echo "curate: $total queued; batching $batch_max this pass, rest next interval" >&2
   fi
 
+  # Per-task accounting: manifest (what we handed over) + results (what the
+  # agent reports back, one line per task). The pair is the batch's record.
+  local stamp manifest results
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  manifest="$CURATE_LOG_DIR/$stamp.batch"
+  results="$CURATE_LOG_DIR/$stamp.results"
+  : > "$manifest"
+  for f in "${tasks[@]}"; do basename "$f" .task >> "$manifest"; done
+
   local today; today="$(date +%Y-%m-%d)"
   local prompt; prompt="$(mktemp -t cartograph-curate.XXXXXX)"
   {
@@ -127,22 +163,43 @@ task names; make SURGICAL, conservative edits; set the stated frontmatter
 marker on each so it is not repeated. Do NOT run any background jobs, do NOT
 invoke \`claude\`, and do NOT run scripts/auto-promote.sh or scripts/curate.sh.
 
+## Per-task result reporting (mandatory, for EVERY task)
+
+As you finish (or give up on) each task, append EXACTLY ONE line for it to
+this results file (absolute path):
+
+  $results
+
+Line format — three tab-separated fields:
+
+  <task-key>	done|failed	<one-line detail>
+
+Append via Bash with a real tab, e.g.:
+
+  printf '%s\tdone\t%s\n' '<task-key>' 'what you changed' >> '$results'
+
+Report \`done\` only when the task's edits actually landed on disk; report
+\`failed\` with the reason otherwise. A task with no results line is treated
+as failed and will be retried in a later pass.
+
 EOF
-    local n=0 kind a b
+    local n=0 kind a b key
     for f in "${tasks[@]}"; do
       IFS='|' read -r kind a b < "$f"
+      key="$(basename "$f" .task)"
       n=$((n + 1))
-      _cg_task_block "$n" "$kind" "$a" "$b" "$today"
+      _cg_task_block "$n" "$kind" "$a" "$b" "$today" "$key"
     done
     cat <<EOF
 ## After all tasks
-Run \`bash scripts/lint-content.sh --human\` and report any NEW breakage you
-introduced. Then print a one-line summary per task (what you changed, or why
-you skipped it).
+Confirm every task has its line in \`$results\`. Then run
+\`bash scripts/lint-content.sh --human\` and report any NEW breakage you
+introduced, plus a one-line summary per task (what you changed, or why you
+skipped it).
 EOF
   } > "$prompt"
 
-  echo "curate: draining ${#tasks[@]} task(s) via ONE headless agent" >&2
+  echo "curate: draining ${#tasks[@]} task(s) via ONE headless agent (batch $stamp)" >&2
   local flags="${CARTOGRAPH_CURATE_CLAUDE_FLAGS:---print --output-format text --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep,Bash}"
   local rc=0
   # $flags is an intentional word-split flag list (per-flag tokens for the CLI).
@@ -152,12 +209,59 @@ EOF
 
   if (( rc == 75 || rc == 77 )); then
     echo "curate: drain deferred/refused (rc=$rc) — queue kept for next interval" >&2
+    rm -f "$manifest" "$results"   # batch never ran — no history to keep
     return 0
   fi
-  # Drain ran. Clear processed tasks; the frontmatter markers the agent set
-  # stop re-enqueue, and anything still eligible is re-queued next SessionStart.
-  for f in "${tasks[@]}"; do rm -f "$f"; done
+
+  # Drain ran. Settle per task: a `done` results line clears the .task file;
+  # `failed` or missing keeps it (it retries next drain) and is recorded.
+  local key done_n=0 kept_n=0
+  for f in "${tasks[@]}"; do
+    key="$(basename "$f" .task)"
+    if [[ -f "$results" ]] \
+       && awk -F'\t' -v k="$key" '$1==k && $2=="done"{found=1} END{exit !found}' \
+            "$results" 2>/dev/null; then
+      rm -f "$f"
+      done_n=$((done_n + 1))
+    else
+      kept_n=$((kept_n + 1))
+      cg_log_error curate "task $key failed-or-unreported (batch $stamp) — kept for retry"
+    fi
+  done
+  echo "curate: batch $stamp settled — $done_n done, $kept_n kept for retry" >&2
   return "$rc"
+}
+
+# Human-readable view of the last n batches (manifest joined with results).
+cg_log_show() {
+  local n="${1:-5}"
+  local batches=() b
+  while IFS= read -r b; do batches+=("$b"); done \
+    < <(find "$CURATE_LOG_DIR" -maxdepth 1 -name '*.batch' -type f 2>/dev/null \
+        | sort -r | head -n "$n")
+  if (( ${#batches[@]} == 0 )); then
+    echo "curate log: no batches recorded under $CURATE_LOG_DIR"
+    return 0
+  fi
+  local results key line status detail count
+  for b in "${batches[@]}"; do
+    results="${b%.batch}.results"
+    count="$(wc -l < "$b" | tr -d ' ')"
+    echo "batch $(basename "$b" .batch) — $count task(s)"
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      line=""
+      [[ -f "$results" ]] \
+        && line="$(awk -F'\t' -v k="$key" '$1==k{print; exit}' "$results" 2>/dev/null)"
+      if [[ -n "$line" ]]; then
+        status="$(printf '%s\n' "$line" | cut -f2)"
+        detail="$(printf '%s\n' "$line" | cut -f3-)"
+        printf '  %-11s %-46s %s\n' "$status" "$key" "$detail"
+      else
+        printf '  %-11s %s\n' "unreported" "$key"
+      fi
+    done < "$b"
+  done
 }
 
 cmd="${1:-}"
@@ -166,5 +270,6 @@ case "$cmd" in
   drain)   cg_drain ;;
   list)    find "$QUEUE_DIR" -maxdepth 1 -name '*.task' -type f 2>/dev/null | sort ;;
   count)   find "$QUEUE_DIR" -maxdepth 1 -name '*.task' -type f 2>/dev/null | wc -l | tr -d ' ' ;;
-  *) echo "usage: curate.sh {enqueue <kind> <a> <b>|drain|list|count}" >&2; exit 2 ;;
+  log)     shift; cg_log_show "${1:-5}" ;;
+  *) echo "usage: curate.sh {enqueue <kind> <a> <b>|drain|list|count|log [n]}" >&2; exit 2 ;;
 esac

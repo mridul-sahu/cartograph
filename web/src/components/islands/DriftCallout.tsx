@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import FixWithClaude from './FixWithClaude';
+import MarkdownView from './MarkdownView';
 
 export default function DriftCallout({ repo, slug }: { repo: string; slug: string }) {
   const [markdown, setMarkdown] = useState<string | null>(null);
@@ -42,7 +43,9 @@ export default function DriftCallout({ repo, slug }: { repo: string; slug: strin
         <span className="font-mono text-xs text-muted">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
-        <pre className="px-4 py-3 border-t-2 border-[var(--warn)] font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{markdown}</pre>
+        <div className="px-4 py-3 border-t-2 border-[var(--warn)]">
+          <MarkdownView markdown={markdown ?? ''} showFrontmatter={false} />
+        </div>
       )}
       <div className="px-4 py-2 border-t border-[var(--border-soft)] flex items-center justify-between gap-3 flex-wrap">
         <span className="font-mono text-[10px] text-muted">

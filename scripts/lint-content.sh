@@ -46,6 +46,10 @@ if [[ -n "${CARTOGRAPH_FORBIDDEN_EXTRAS:-}" ]]; then
 fi
 PLACEHOLDER_TOKENS='\bTODO\b|\bFIXME\b|\bXXX\b|fill in|tbd\b'
 
+# Tracked repo names — banned as episode tags (catch-alls; every orbax
+# episode would tag `orbax`, which carries zero retrieval signal).
+TRACKED_REPOS="jax xla orbax tunix tokamax sglang"
+
 # Counters for the final report.
 total_files=0
 hard_fails=0
@@ -218,7 +222,7 @@ if [[ -d "$EPISODES" ]]; then
     if (( words < EPISODE_MIN )); then
       issue "warn" "$file" "episode below floor ($words < $EPISODE_MIN)"
     elif (( words > EPISODE_MAX )); then
-      issue "warn" "$file" "episode over ceiling ($words > $EPISODE_MAX); consider distilling"
+      issue "fail" "$file" "episode over ceiling ($words > $EPISODE_MAX); distill or split"
     fi
 
     [[ -n "$(fm_field "$file" date)" ]] || issue "fail" "$file" "frontmatter 'date' missing"
@@ -227,6 +231,15 @@ if [[ -d "$EPISODES" ]]; then
     if (( tag_count < 2 )); then
       issue "warn" "$file" "episode has <2 tags"
     fi
+    # Repo-name catch-all tags carry no retrieval signal — every episode in
+    # a repo would match. Demand subsystem tags instead.
+    while IFS= read -r tag; do
+      tag="$(echo "$tag" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')"
+      [[ -z "$tag" ]] && continue
+      case " $TRACKED_REPOS " in
+        *" $tag "*) issue "fail" "$file" "repo-name tag '$tag' is a catch-all — use a subsystem tag" ;;
+      esac
+    done < <(echo "$tags_line" | tr -d '[]' | tr ',' '\n')
   done < <(find "$EPISODES" -name '*.md' -print0 2>/dev/null)
 fi
 

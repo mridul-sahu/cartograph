@@ -243,6 +243,26 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 0.85em;
   }
+  /* Plain <pre><code> blocks — emitted by the client-side MarkdownView
+     island (marked without Code Hike). Same chrome as mermaid pres. */
+  .prose-cartograph pre:not(.mermaid):not(.ch-pre) {
+    background: var(--muted-bg);
+    color: var(--fg);
+    border: 2px solid var(--border);
+    box-shadow: 4px 4px 0 0 var(--shadow);
+    padding: 1rem 1.15rem;
+    overflow-x: auto;
+    margin: 1.25rem 0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  .prose-cartograph pre:not(.mermaid):not(.ch-pre) code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    box-shadow: none;
+  }
   /* Mermaid placeholder pre — keep the brutalist chrome. */
   .prose-cartograph pre.mermaid {
     background: var(--muted-bg);

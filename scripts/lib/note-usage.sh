@@ -37,12 +37,30 @@ print(entry.get("used_count", 0))
 PY
 }
 
-# Additive ranking boost: 0 for unused/unknown notes, +1 if used at least
-# once, +2 if used 6+ times. Bounded so keyword relevance still dominates.
+note_usage_get_injected() {  # $1 = path relative to cartograph root
+  python3 - "$NOTE_USAGE_FILE" "$1" <<'PY' 2>/dev/null
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+if not p.is_file():
+    print(0); sys.exit(0)
+data = json.loads(p.read_text())
+entry = data.get("notes", {}).get(sys.argv[2], {})
+print(entry.get("injected_count", 0))
+PY
+}
+
+# Additive ranking boost: +1 if used at least once, +2 if used 6+ times,
+# -1 if injected 5+ times and NEVER used (the negative-feedback signal —
+# repeatedly surfaced but never acted on means mis-titled or dead weight).
+# Bounded so keyword relevance still dominates. Mirror of the boost in
+# scripts/lib/rank-notes.py — keep the two in sync.
 note_usage_score_boost() {  # $1 = path
-  local used; used="$(note_usage_get_used "$1")"
+  local used injected
+  used="$(note_usage_get_used "$1")"
+  injected="$(note_usage_get_injected "$1")"
   if   (( used >= 6 )); then echo 2
   elif (( used >= 1 )); then echo 1
+  elif (( injected >= 5 )); then echo -1
   else echo 0
   fi
 }

@@ -7,6 +7,7 @@ import QueuePanel from '~/components/islands/QueuePanel.tsx';
 import Whatknows from '~/components/islands/Whatknows.tsx';
 import BookmarksCard from '~/components/islands/BookmarksCard.tsx';
 import ReadingQueueCard from '~/components/islands/ReadingQueueCard.tsx';
+import InjectionCostCard from '~/components/islands/InjectionCostCard.tsx';
 import { countAll } from '~/lib/content';
 
 const counts = countAll();
@@ -59,6 +60,10 @@ const counts = countAll();
 
       <Card eyebrow="06 / activity" title="Recent upstream activity" right="last 10 commits">
         <ActivityFeed client:visible />
+      </Card>
+
+      <Card eyebrow="07 / injection cost" title="Orientation injection cost" right="est tokens / repo" padded={false}>
+        <InjectionCostCard client:visible />
       </Card>
     </div>
   </div>

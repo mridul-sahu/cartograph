@@ -191,7 +191,7 @@ const totalCount = entries.length;
 
   <Card eyebrow="results" title="Documents" padded={false}>
     <div class="px-5 py-2 border-b-2 border-border-soft font-mono text-xs text-muted">
-      showing <span id="lib-count">{totalCount}</span> of {totalCount}
+      showing <span id="lib-count">{totalCount}</span> of <span id="lib-total">{totalCount}</span>
     </div>
     <p id="lib-empty" class="p-5 text-sm text-muted hidden">No documents match these facets.</p>
     <ul class="divide-y-2 divide-border-soft">
@@ -212,18 +212,37 @@ const totalCount = entries.length;
         </li>
       ))}
     </ul>
+    <nav id="lib-pager" class="hidden px-5 py-2 border-t-2 border-border-soft flex items-center justify-between gap-3 font-mono text-xs" aria-label="Library pages">
+      <button type="button" id="lib-prev" class="px-2 py-0.5 border border-border text-muted hover:text-fg disabled:opacity-40 cursor-pointer disabled:cursor-default">← prev</button>
+      <span class="text-muted">page <span id="lib-page" class="text-fg">1</span> / <span id="lib-pages">1</span></span>
+      <button type="button" id="lib-next" class="px-2 py-0.5 border border-border text-muted hover:text-fg disabled:opacity-40 cursor-pointer disabled:cursor-default">next →</button>
+    </nav>
   </Card>
 
   <script is:inline>
     (function () {
+      // Facet filtering + 50/page pagination, both client-side over the
+      // build-time corpus. /api/library can't back this list: its layer map
+      // has no research-paper / ramp-up kinds and its rows carry no
+      // title/lead/href — rendering from it would silently drop content.
+      // The static page already ships the full corpus, so we treat it as
+      // the "full response" and page it locally.
+      const PAGE_SIZE = 50;
       const params = new URLSearchParams(location.search);
       let curType = params.get('type') || '';
       let curRepo = params.get('repo') || '';
+      let curPage = 0;
       const rows = Array.from(document.querySelectorAll('.lib-row'));
       const typeChips = Array.from(document.querySelectorAll('[data-type-chip]'));
       const repoChips = Array.from(document.querySelectorAll('[data-repo-chip]'));
       const empty = document.getElementById('lib-empty');
       const countEl = document.getElementById('lib-count');
+      const totalEl = document.getElementById('lib-total');
+      const pager = document.getElementById('lib-pager');
+      const prevBtn = document.getElementById('lib-prev');
+      const nextBtn = document.getElementById('lib-next');
+      const pageEl = document.getElementById('lib-page');
+      const pagesEl = document.getElementById('lib-pages');
 
       function setChipActive(el, on) {
         el.classList.toggle('bg-accent', on);
@@ -234,18 +253,31 @@ const totalCount = entries.length;
         el.classList.toggle('hover:text-fg', !on);
       }
       function apply() {
-        let shown = 0;
-        for (const row of rows) {
+        const matching = rows.filter((row) => {
           const okType = !curType || row.getAttribute('data-kind') === curType;
           const okRepo = !curRepo || row.getAttribute('data-repo') === curRepo;
-          const show = okType && okRepo;
-          row.classList.toggle('hidden', !show);
-          if (show) shown++;
-        }
+          return okType && okRepo;
+        });
+        const pageCount = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
+        if (curPage >= pageCount) curPage = pageCount - 1;
+        const start = curPage * PAGE_SIZE;
+        const end = start + PAGE_SIZE;
+        const visible = new Set(matching.slice(start, end));
+        for (const row of rows) row.classList.toggle('hidden', !visible.has(row));
         typeChips.forEach((c) => setChipActive(c, (c.getAttribute('data-type-chip') || '') === curType));
         repoChips.forEach((c) => setChipActive(c, (c.getAttribute('data-repo-chip') || '') === curRepo));
-        if (empty) empty.classList.toggle('hidden', shown !== 0);
-        if (countEl) countEl.textContent = String(shown);
+        if (empty) empty.classList.toggle('hidden', matching.length !== 0);
+        if (countEl) {
+          countEl.textContent = matching.length === 0
+            ? '0'
+            : (start + 1) + '–' + Math.min(end, matching.length);
+        }
+        if (totalEl) totalEl.textContent = String(matching.length);
+        if (pager) pager.classList.toggle('hidden', pageCount <= 1);
+        if (pageEl) pageEl.textContent = String(curPage + 1);
+        if (pagesEl) pagesEl.textContent = String(pageCount);
+        if (prevBtn) prevBtn.disabled = curPage === 0;
+        if (nextBtn) nextBtn.disabled = curPage >= pageCount - 1;
       }
       function syncUrl() {
         const p = new URLSearchParams();
@@ -254,8 +286,10 @@ const totalCount = entries.length;
         const qs = p.toString();
         history.replaceState(null, '', qs ? location.pathname + '?' + qs : location.pathname);
       }
-      typeChips.forEach((c) => c.addEventListener('click', () => { curType = c.getAttribute('data-type-chip') || ''; syncUrl(); apply(); }));
-      repoChips.forEach((c) => c.addEventListener('click', () => { curRepo = c.getAttribute('data-repo-chip') || ''; syncUrl(); apply(); }));
+      typeChips.forEach((c) => c.addEventListener('click', () => { curType = c.getAttribute('data-type-chip') || ''; curPage = 0; syncUrl(); apply(); }));
+      repoChips.forEach((c) => c.addEventListener('click', () => { curRepo = c.getAttribute('data-repo-chip') || ''; curPage = 0; syncUrl(); apply(); }));
+      if (prevBtn) prevBtn.addEventListener('click', () => { curPage = Math.max(0, curPage - 1); apply(); });
+      if (nextBtn) nextBtn.addEventListener('click', () => { curPage += 1; apply(); });
       apply();
     })();
   </script>

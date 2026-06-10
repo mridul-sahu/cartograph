@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cartograph.maintenance</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__CARTOGRAPH_ROOT__/scripts/maintenance.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__CARTOGRAPH_ROOT__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CARTOGRAPH_ROOT</key>
+    <string>__CARTOGRAPH_ROOT__</string>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__CARTOGRAPH_ROOT__/.cartograph/logs/maintenance.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__CARTOGRAPH_ROOT__/.cartograph/logs/maintenance.err.log</string>
+</dict>
+</plist>

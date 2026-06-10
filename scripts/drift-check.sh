@@ -141,4 +141,70 @@ if [[ -x "$CARTOGRAPH_ROOT/scripts/topic-drift.sh" ]]; then
   done
 fi
 
+# Merge topic-citation drift into the per-repo report so the orientation
+# hook (which only injects .drift-reports/<repo>.md) surfaces it. The
+# section is rebuilt from scratch on every run — idempotent, no duplicates.
+merge_topic_drift() {
+  local repo="$1"
+  local report="$REPORTS_DIR/$repo.md"
+  local topics_dir="$REPORTS_DIR/topics/$repo"
+  local section_header="## Topic notes with citation drift"
+
+  # Collect one line per topic drift report: slug + its first heading.
+  local lines=() f slug heading
+  if [[ -d "$topics_dir" ]]; then
+    for f in "$topics_dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      slug="$(basename "$f" .md)"
+      heading="$(grep -m1 '^#' "$f" 2>/dev/null | sed 's/^#[# ]*//')"
+      lines+=("- \`$slug\` — ${heading:-"(no heading)"} (see \`.drift-reports/topics/$repo/$slug.md\`)")
+    done
+  fi
+
+  # Strip any previous section (header through next ## or EOF), dropping
+  # trailing blank lines so reruns don't accumulate whitespace.
+  if [[ -f "$report" ]]; then
+    awk -v hdr="$section_header" '
+      $0 == hdr { skip=1; next }
+      skip && /^## / { skip=0 }
+      skip { next }
+      /^[[:space:]]*$/ { blanks++; next }
+      { for (i=0; i<blanks; i++) print ""; blanks=0; print }
+    ' "$report" > "$report.tmp" && mv "$report.tmp" "$report"
+  fi
+
+  if [[ ${#lines[@]} -eq 0 ]]; then
+    # No topic drift. If the report existed only to carry this section,
+    # remove it; a bedrock-drift report stays as the loop above left it.
+    if [[ -f "$report" ]] && grep -q '<!-- topic-drift-only -->' "$report"; then
+      rm -f "$report"
+    fi
+    return 0
+  fi
+
+  if [[ ! -f "$report" ]]; then
+    # No bedrock-level drift, but topic citations drifted — write a minimal
+    # report so the orientation hook still surfaces it.
+    {
+      echo "# Drift: $repo"
+      echo
+      echo "<!-- topic-drift-only -->"
+      echo "_No bedrock-level drift; topic-citation drift below._"
+    } > "$report"
+  fi
+
+  {
+    echo
+    echo "$section_header"
+    echo
+    for l in "${lines[@]}"; do
+      echo "$l"
+    done
+  } >> "$report"
+}
+
+for repo in "${repos[@]}"; do
+  merge_topic_drift "$repo"
+done
+
 exit 0

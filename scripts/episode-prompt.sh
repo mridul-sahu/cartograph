@@ -38,6 +38,8 @@ cat 2>/dev/null >/dev/null || true
 
 # shellcheck source=lib/headless.sh
 source "$(dirname "$0")/lib/headless.sh"
+# shellcheck source=lib/errors.sh
+source "$(dirname "$0")/lib/errors.sh"
 cg_autospawn_guard   # no-op unless inside a headless agent / kill switch on
 
 CWD="$(pwd -P)"
@@ -170,7 +172,8 @@ EOF
   if [[ "$auto" == "1" ]]; then
     # Enqueue, don't spawn — the batched drain (one agent) drafts it later.
     rel="${session_log#"$CARTOGRAPH_ROOT"/}"
-    bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue episode "$REPO" "$rel" || true
+    bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue episode "$REPO" "$rel" \
+      || cg_log_error episode-prompt "enqueue episode $REPO $rel failed (rc=$?)"
   fi
 fi
 
@@ -196,7 +199,8 @@ fi
 if [[ "$auto_research" == "1" && -z "$research_written" && -f "$session_log" ]] \
    && (( research_signals >= research_threshold )); then
   rel="${session_log#"$CARTOGRAPH_ROOT"/}"
-  bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue research "$REPO" "$rel" || true
+  bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue research "$REPO" "$rel" \
+    || cg_log_error episode-prompt "enqueue research $REPO $rel failed (rc=$?)"
 fi
 
 exit 0

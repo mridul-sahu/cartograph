@@ -257,6 +257,31 @@ def main(argv: list[str]) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
+    # Hand gaps off for fixing. scripts/curate.sh's enqueue validates `kind`
+    # against a fixed set (fold|promote|episode|research) that has no
+    # anchor-fix kind, so we can't enqueue there — instead emit a pending
+    # list a maintenance pass can consume (and clear it when no gaps remain
+    # so stale entries never get fixed twice).
+    pending_path = root / ".cartograph" / "state" / "anchor-gaps-pending.json"
+    if result["total_gaps"] > 0:
+        pending = {
+            "schema": 1,
+            "generated_at": result["generated_at"],
+            "gaps": [
+                {
+                    "repo": repo,
+                    "slug": gap["slug"],
+                    "topic_path": gap["topic_path"],
+                    "missing": gap["missing"],
+                }
+                for repo, gaps in result["gaps_by_repo"].items()
+                for gap in gaps
+            ],
+        }
+        pending_path.write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
+    else:
+        pending_path.unlink(missing_ok=True)
+
     if args.human:
         print(f"anchor-coverage — {result['topics_audited']} topics audited, {result['total_gaps']} with gaps")
         for repo, gaps in result["gaps_by_repo"].items():

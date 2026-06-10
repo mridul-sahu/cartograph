@@ -83,6 +83,22 @@ export default function QueuePanel() {
   const [error, setError] = useState<string | null>(null);
   // Track section expansion so a 47-item section doesn't dominate the panel.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Optimistic per-path touch state for aged topics: 'busy' while the POST
+  // is in flight, an ISO date once bumped, 'error: …' on failure.
+  const [touched, setTouched] = useState<Record<string, string>>({});
+
+  const touchTopic = async (path: string, repo: string, slug: string) => {
+    setTouched((prev) => ({ ...prev, [path]: 'busy' }));
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const r = await fetch(`/api/topic/${repo}/${slug}/touch`, { method: 'POST' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      setTouched((prev) => ({ ...prev, [path]: today }));
+    } catch (e) {
+      // Endpoint may not exist yet — surface the failure on the row.
+      setTouched((prev) => ({ ...prev, [path]: `error: ${String(e)}` }));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +174,9 @@ export default function QueuePanel() {
         const showAll = expanded[sec.label] === true;
         const visible = showAll ? sec.items : sec.items.slice(0, 8);
         const badge = kindBadge(sectionKind(sec.label));
+        // "Topics aged >Nd" — stale-but-correct topics get a one-click
+        // last_revised bump instead of a full revision pass.
+        const isAgedSection = sec.label.toLowerCase().includes('aged');
         return (
           <details key={sec.label} open={open} className="border-2 border-border bg-bg">
             <summary
@@ -181,16 +200,57 @@ export default function QueuePanel() {
                 const href = pathToHref(primary);
                 // Zebra stripe — readability across long sections.
                 const rowBg = i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]';
+                // Touch affordance for aged topics (guides/<r>/topics/<s>.md).
+                const topicMatch = isAgedSection
+                  ? primary.match(/^guides\/([^/]+)\/topics\/(.+)\.md$/)
+                  : null;
+                const touchState = topicMatch ? touched[primary] : undefined;
+                const touchedDate =
+                  touchState && touchState !== 'busy' && !touchState.startsWith('error') ? touchState : null;
+                const rowSecondary = touchedDate ? `touched ${touchedDate}` : secondary;
                 const content = (
                   <div className="px-3 py-1.5 font-mono text-xs flex items-center justify-between gap-3 border-b border-[var(--border-soft)] last:border-b-0 hover:bg-[var(--surface-2)]">
                     {badge && <span className={`px-1.5 py-0.5 ${badge.cls} flex-shrink-0`}>{badge.label}</span>}
                     <span className="truncate text-fg flex-1 min-w-0">{primary}</span>
-                    {secondary && <span className="text-muted whitespace-nowrap flex-shrink-0">{secondary}</span>}
+                    {rowSecondary && (
+                      <span className={`whitespace-nowrap flex-shrink-0 ${touchedDate ? 'text-[var(--ok)]' : 'text-muted'}`}>
+                        {rowSecondary}
+                      </span>
+                    )}
                   </div>
                 );
+                const touchButton = topicMatch ? (
+                  <div className="flex items-center gap-2 pr-3 flex-shrink-0">
+                    {touchState?.startsWith('error') && (
+                      <span className="font-mono text-[10px] text-[var(--danger)]" title={touchState}>
+                        touch failed
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={touchState === 'busy' || !!touchedDate}
+                      title="Bump last_revised to today without a content revision"
+                      onClick={() => touchTopic(primary, topicMatch[1], topicMatch[2])}
+                      className="px-2 py-0.5 font-mono text-[10px] border border-border text-muted hover:text-fg hover:bg-[var(--surface-2)] disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {touchState === 'busy' ? 'touching…' : touchedDate ? '✓ touched' : 'touch last_revised'}
+                    </button>
+                  </div>
+                ) : null;
                 return (
                   <li key={i} className={rowBg}>
-                    {href ? (
+                    {touchButton ? (
+                      <div className="flex items-stretch">
+                        <div className="flex-1 min-w-0">
+                          {href ? (
+                            <a href={href} className="block no-underline text-fg">{content}</a>
+                          ) : (
+                            content
+                          )}
+                        </div>
+                        {touchButton}
+                      </div>
+                    ) : href ? (
                       <a href={href} className="block no-underline text-fg">
                         {content}
                       </a>

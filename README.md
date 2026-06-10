@@ -242,19 +242,28 @@ The `UserPromptSubmit` hook detects your scope, then injects:
 
 - **All bedrock** for the current repo (full text — it's the floor).
 - **All cross-repo seams** (full text — usually a single page).
-- **Top-3 topic notes** by keyword overlap with your prompt.
-- **Top-3 non-superseded, non-distilled episodes** by keyword overlap.
-- **Top-3 research notes** by keyword overlap (surfaced so you UPDATE
-  existing notes instead of starting duplicates).
+- **Topic notes as a lean menu**: the single best match in full, plus a
+  menu of the next 7 (title + summary + path) the agent pulls with `Read`.
+- **Episodes** (non-superseded, non-distilled, repo-scoped): same shape.
+- **Research notes**: menu only (surfaced so you UPDATE existing notes
+  instead of starting duplicates).
 - A **revision reminder** ("if a topic note contradicts the code you read,
   fix it in place").
 
-Ranking is keyword overlap, then a BM25 rerank pass via
-`scripts/build-search-index.py` to catch semantic matches keyword overlap
-misses ("checkpoint hangs" → `async-checkpoint-flow.md`).
+Ranking is IDF-weighted keyword overlap (rare discriminative terms beat
+corpus-common ones) with a usage feedback signal: notes the agent actually
+followed in past sessions rank higher; notes injected five times and never
+used take a penalty. All layers dedup against each other, then a BM25
+rerank pass via `scripts/build-search-index.py` catches semantic matches
+keyword overlap misses ("checkpoint hangs" → `async-checkpoint-flow.md`).
+The tokenizer splits identifiers, so `AsyncCheckpointer` matches a query
+for "checkpointer".
 
 You can re-inject mid-session with `/orient`, see what would be injected
-with `/queue`, or expand the search with `/find <natural query>`.
+with `/queue`, expand the search with `/find <natural query>`, restore the
+legacy full-bodies shape with `CARTOGRAPH_INJECT_MODE=full`, or disable
+injection entirely with `CARTOGRAPH_INJECT_DISABLE=1` (that switch exists
+for the eval harness — see feature 12).
 
 ### 2. The compounding loop (episodes → topics → bedrock)
 
@@ -461,7 +470,7 @@ formal docx once it's built.
 | **Stacked PRs** | `/stack` • `/stack-new` • `/stack-pr` • `/stack-submit` • `/stack-restack` • `/stack-sync` |
 | **Hygiene** | `/doctor` — verify all forks • `/lint` — content quality bar |
 
-### 11. Seventy-one API endpoints
+### 11. Eighty-two API endpoints
 
 Everything the slash commands and UI do is exposed as a JSON API on
 `http://localhost:47777/api/`. Useful if you want to build your own
@@ -479,6 +488,35 @@ A few highlights:
   topic; `/all` for everything drifted
 - `POST /api/promote/{tag}` — promote ≥3 same-tag episodes to a topic
 - `GET /api/queue` — the review queue (auto-drafted, drifted, in-flight)
+- `GET /api/errors` — the chassis error feed (tail of `errors.log`)
+- `GET /api/injection-cost` — per-repo bedrock token estimates + budget warns
+- `POST /api/topic/{repo}/{slug}/touch` — bump `last_revised` on a stale topic
+- `POST /api/backfill/all` — sequential all-repo backfill with status polling
+
+### 12. Self-measurement (eval harness, usage feedback, error feed)
+
+A knowledge system that only accumulates is a filing cabinet. Three
+mechanisms keep cartograph honest:
+
+- **Golden-question eval harness** (`scripts/eval/run-eval.sh`): a set of
+  graded architecture questions per repo, each run headlessly twice —
+  orientation on vs `CARTOGRAPH_INJECT_DISABLE=1`. The per-arm deltas in
+  score / turns / wall time are the regression gate for every retrieval
+  change. Results time-series under `.cartograph/eval/`. Run evals on a
+  quiet machine — concurrent agent load degrades sessions silently.
+- **Usage feedback loop**: every injected note is recorded; a follow-up
+  `Read` of the note (or a file it cites) marks it *used*, which boosts its
+  future ranking. Notes injected repeatedly and never used sink. Per-session
+  records land in `usage-log.jsonl`.
+- **Central error feed**: chassis failures (publish push, curation drains,
+  enqueues) append to `.cartograph/errors.log` and surface on the console.
+  Curation drains account per task — failed tasks stay queued and retry
+  instead of vanishing with their batch.
+
+Operationally, `scripts/setup-launchd.sh` (macOS) puts the server under
+KeepAlive supervision and schedules a nightly maintenance pass — drift
+auto-revision, content lint, anchor-gap fixes, curation drain, session
+archival — so the compounding runs while you sleep.
 
 ---
 

@@ -141,7 +141,9 @@ fi
 first_fork="$(find "$CARTOGRAPH_ROOT/workspace" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
 if [[ -n "$first_fork" && -d "$first_fork/.git" ]]; then
   out="$(echo "{\"prompt\": \"test\", \"cwd\": \"$first_fork\"}" | bash "$CARTOGRAPH_ROOT/scripts/inject-context.sh" 2>&1)"
-  if echo "$out" | grep -q "<cartograph-context>"; then
+  # No pipe here: under pipefail, grep -q's early exit EPIPEs the echo of
+  # a 64KB+ injection and fails the pipeline despite the match.
+  if [[ "$out" == *"<cartograph-context>"* ]]; then
     ok "injects context tag inside fork ($(basename "$first_fork"))"
   else
     no "no <cartograph-context> tag inside fork; got: ${out:0:120}"

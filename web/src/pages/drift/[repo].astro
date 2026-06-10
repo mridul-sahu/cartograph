@@ -2,6 +2,7 @@
 import Base from '~/layouts/Base.astro';
 import Card from '~/components/Card.astro';
 import { REPOS } from '~/lib/repos';
+import { renderMarkdown } from '~/lib/markdown';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,16 +19,18 @@ const { repo } = Astro.params as { repo: string };
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
 
 const repoReportPath = join(ROOT, '.drift-reports', `${repo}.md`);
-const repoReport = existsSync(repoReportPath) ? readFileSync(repoReportPath, 'utf8') : null;
+const repoReport = existsSync(repoReportPath)
+  ? (await renderMarkdown(readFileSync(repoReportPath, 'utf8'))).html
+  : null;
 
-const topicReports: { slug: string; markdown: string }[] = [];
+const topicReports: { slug: string; html: string }[] = [];
 const topicDir = join(ROOT, '.drift-reports', 'topics', repo);
 if (existsSync(topicDir)) {
   for (const f of readdirSync(topicDir).sort()) {
     if (!f.endsWith('.md')) continue;
     topicReports.push({
       slug: f.replace(/\.md$/, ''),
-      markdown: readFileSync(join(topicDir, f), 'utf8'),
+      html: (await renderMarkdown(readFileSync(join(topicDir, f), 'utf8'))).html,
     });
   }
 }
@@ -67,7 +70,7 @@ const hasAnything = repoReport || topicReports.length > 0;
 
   {repoReport && (
     <Card eyebrow="01 / bedrock drift" title={`.drift-reports/${repo}.md`} padded={true}>
-      <pre class="font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{repoReport}</pre>
+      <div class="prose-cartograph text-sm" set:html={repoReport} />
     </Card>
   )}
 
@@ -91,7 +94,7 @@ const hasAnything = repoReport || topicReports.length > 0;
                 >{t.slug}</a>
                 <span class="font-mono text-[10px] text-muted">expand</span>
               </summary>
-              <pre class="px-3 py-3 border-t border-[var(--border-soft)] font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{t.markdown}</pre>
+              <div class="prose-cartograph text-sm px-3 py-3 border-t border-[var(--border-soft)]" set:html={t.html} />
             </details>
           </li>
         ))}

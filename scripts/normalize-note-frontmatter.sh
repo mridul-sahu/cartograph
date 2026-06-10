@@ -110,6 +110,34 @@ for ln in fm_lines:
         existing.add(fm.group(1))
 
 missing = [(k, v) for k, v in needed if k not in existing]
+
+# Episodes additionally need `repo:` — without it the anchor-coverage
+# audit and the per-repo surfaces can't attribute the episode. Infer it:
+# (a) a workspace/<repo>/ path in files_touched, else (b) the most
+# frequent tracked-repo name in the body, else leave absent.
+TRACKED_REPOS = ["jax", "xla", "orbax", "tunix", "tokamax", "sglang"]
+
+
+def infer_repo(fm: str, body: str) -> str:
+    ws = re.findall(r"\bworkspace/([A-Za-z0-9_-]+)/", fm)
+    if ws:
+        counts: dict[str, int] = {}
+        for r in ws:
+            counts[r] = counts.get(r, 0) + 1
+        return max(counts, key=lambda r: (counts[r], -ws.index(r)))
+    best, best_n = "", 0
+    for r in TRACKED_REPOS:
+        n = len(re.findall(r"\b" + r + r"\b", body, re.IGNORECASE))
+        if n > best_n:
+            best, best_n = r, n
+    return best
+
+
+if layer == "episode" and "repo" not in existing:
+    repo = infer_repo(fm_text, text[m.end():])
+    if repo:
+        missing.insert(0, ("repo", repo))
+
 if not missing:
     sys.exit(0)
 

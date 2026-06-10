@@ -10,14 +10,37 @@
 // so a 60-tag list is searchable instead of scroll-walls of one-each tags.
 // "Show all N" expands the long tail.
 //
+// Pagination: 50 cards per page. Page data comes from /api/episodes-list
+// with limit/offset (+repo/tag filter params) when the API paginates —
+// detected by a numeric `total` in the response — joined back to the rich
+// build-time cards by slug. When the API is absent or ignores the paging
+// params, we page the build-time array client-side instead (the full
+// corpus is already inlined by the static build, so nothing is lost).
+//
 // All animations gate on `prefers-reduced-motion`. Each card uses the
 // standard brutalist hover idiom (translate -3/-3 + extend shadow).
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 
 // Default chip cap. Tweak here, not at the callsite — the page's tag list
 // arrives already sorted by frequency descending.
 const TAG_VISIBLE_DEFAULT = 12;
+
+// Episodes per page — keep in sync with the pager copy below.
+const PAGE_SIZE = 50;
+
+// Shape of one /api/episodes-list result (cartograph_query JSON row).
+interface ApiEpisode {
+  path: string;
+  repo: string | null;
+  date: string | null;
+  tags: string[] | null;
+}
+
+interface ApiPage {
+  results: ApiEpisode[];
+  total: number;
+}
 
 export interface EpisodeCard {
   slug: string;
@@ -38,8 +61,57 @@ interface Props {
 
 export default function EpisodesTimeline({ episodes, repos, tags }: Props) {
   const reduced = useReducedMotion();
-  const [repoFilter, setRepoFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [repoFilter, setRepoFilterRaw] = useState<string>('all');
+  const [tagFilter, setTagFilterRaw] = useState<string>('all');
+  const [page, setPage] = useState(0);
+  const [apiPage, setApiPage] = useState<ApiPage | null>(null);
+
+  // Any filter change restarts paging from the first page.
+  const setRepoFilter = (v: string) => {
+    setRepoFilterRaw(v);
+    setPage(0);
+  };
+  const setTagFilter = (v: string) => {
+    setTagFilterRaw(v);
+    setPage(0);
+  };
+
+  // Rich build-time cards by slug — API page results join back to these so
+  // API-driven paging keeps titles/excerpts/word counts.
+  const bySlug = useMemo(() => {
+    const map = new Map<string, EpisodeCard>();
+    for (const e of episodes) map.set(e.slug, e);
+    return map;
+  }, [episodes]);
+
+  // Fetch the current page from the API. Only adopt the response when it
+  // carries a numeric `total` (i.e. the endpoint actually paginates);
+  // otherwise fall back to slicing the static array.
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(page * PAGE_SIZE),
+    });
+    if (repoFilter !== 'all') params.set('repo', repoFilter);
+    if (tagFilter !== 'all') params.set('tag', tagFilter);
+    fetch(`/api/episodes-list?${params}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled) return;
+        if (j && typeof j.total === 'number' && Array.isArray(j.results)) {
+          setApiPage({ results: j.results, total: j.total });
+        } else {
+          setApiPage(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setApiPage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, repoFilter, tagFilter]);
 
   // Per-tag episode count, computed once. Drives the chip count + the
   // "more tags" expansion order so heavy-hitters always appear first.
@@ -59,17 +131,48 @@ export default function EpisodesTimeline({ episodes, repos, tags }: Props) {
     });
   }, [episodes, repoFilter, tagFilter]);
 
-  // Group filtered episodes by month (descending, since the array already
-  // arrives sorted by date desc).
+  // Current page of cards + total across all pages, from whichever source
+  // is live (API paging vs static slice — see header comment).
+  const { pageItems, total } = useMemo(() => {
+    if (apiPage) {
+      const items = apiPage.results.map((r): EpisodeCard => {
+        const slug = r.path.replace(/^episodes\/\d{4}-\d{2}\//, '').replace(/\.md$/, '');
+        const known = bySlug.get(slug);
+        if (known) return known;
+        // Episode written after the last static build — degrade to the
+        // fields the API carries.
+        return {
+          slug,
+          month: slug.slice(0, 7),
+          title: slug,
+          excerpt: '',
+          repo: r.repo,
+          tags: r.tags ?? [],
+          date: r.date,
+          wordCount: 0,
+        };
+      });
+      return { pageItems: items, total: apiPage.total };
+    }
+    return {
+      pageItems: filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+      total: filtered.length,
+    };
+  }, [apiPage, bySlug, filtered, page]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Group the current page by month (descending, since both sources arrive
+  // sorted by date desc).
   const groups = useMemo(() => {
     const map = new Map<string, EpisodeCard[]>();
-    for (const e of filtered) {
+    for (const e of pageItems) {
       const slot = map.get(e.month) ?? [];
       slot.push(e);
       map.set(e.month, slot);
     }
     return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [filtered]);
+  }, [pageItems]);
 
   return (
     <div>
@@ -96,7 +199,7 @@ export default function EpisodesTimeline({ episodes, repos, tags }: Props) {
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {total === 0 ? (
         <div className="brutal-card p-6 font-mono text-sm text-muted">
           no episodes match these filters.
         </div>
@@ -172,6 +275,35 @@ export default function EpisodesTimeline({ episodes, repos, tags }: Props) {
             </section>
           ))}
         </div>
+      )}
+
+      {pageCount > 1 && (
+        <nav
+          className="mt-2 flex items-center justify-between gap-3 border-2 border-border bg-bg px-4 py-2 font-mono text-xs"
+          aria-label="Episode pages"
+        >
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-2 py-0.5 border border-border text-muted hover:text-fg disabled:opacity-40 cursor-pointer disabled:cursor-default"
+          >
+            ← prev
+          </button>
+          <span className="text-muted">
+            page <span className="text-fg">{page + 1}</span> / {pageCount}
+            <span className="mx-2 text-border">·</span>
+            {total.toLocaleString()} episode{total === 1 ? '' : 's'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            disabled={page >= pageCount - 1}
+            className="px-2 py-0.5 border border-border text-muted hover:text-fg disabled:opacity-40 cursor-pointer disabled:cursor-default"
+          >
+            next →
+          </button>
+        </nav>
       )}
     </div>
   );

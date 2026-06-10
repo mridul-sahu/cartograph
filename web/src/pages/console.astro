@@ -3,6 +3,7 @@ import Base from '~/layouts/Base.astro';
 import Card from '~/components/Card.astro';
 import QueuePanel from '~/components/islands/QueuePanel.tsx';
 import LintPanel from '~/components/islands/LintPanel.tsx';
+import ErrorsPanel from '~/components/islands/ErrorsPanel.tsx';
 import PromoteCandidates from '~/components/islands/PromoteCandidates.tsx';
 import DisciplineScorecard from '~/components/islands/DisciplineScorecard.tsx';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -119,7 +120,11 @@ const diary = readDiaryEntries();
     <LintPanel client:load />
   </Card>
 
-  <Card eyebrow="06 / diary" title="Recent diary entries" right={`${diary.length}`} padded={false}>
+  <Card eyebrow="06 / errors" title="Recent script errors" right="/api/errors · polls 60s" padded={false}>
+    <ErrorsPanel client:load />
+  </Card>
+
+  <Card eyebrow="07 / diary" title="Recent diary entries" right={`${diary.length}`} padded={false}>
     {diary.length === 0 ? (
       <p class="p-5 text-sm text-muted">No diary entries yet. <code>scripts/diary.sh</code> writes one once per day.</p>
     ) : (

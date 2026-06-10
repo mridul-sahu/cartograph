@@ -48,9 +48,9 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import yaml  # type: ignore
@@ -139,6 +139,42 @@ _load_dotenv(PROJECT_ROOT / "cartograph.env")
 # worker on each code change, so this naturally reflects the *current* worker's
 # uptime rather than the original launch.
 _PROCESS_START = time.time()
+
+
+def _ttl_cache(seconds: float) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Memoize a compute function's result for ``seconds`` per distinct args.
+
+    Built for the polled endpoints (/api/status, /api/activity) whose
+    underlying compute walks git + frontmatter on every request. Single
+    process, low key cardinality — a plain dict guarded by a lock is
+    enough. The wrapper grows a ``cache_clear()`` so the content-watch
+    loop can invalidate eagerly when content changes on disk.
+    """
+    def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
+        lock = threading.Lock()
+        cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+
+        @wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key = (args, tuple(sorted(kwargs.items())))
+            now = time.monotonic()
+            with lock:
+                hit = cache.get(key)
+                if hit is not None and now < hit[0]:
+                    return hit[1]
+            value = fn(*args, **kwargs)
+            with lock:
+                cache[key] = (now + seconds, value)
+            return value
+
+        def cache_clear() -> None:
+            with lock:
+                cache.clear()
+
+        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
 
 CONFIG_PATH = PROJECT_ROOT / "cartograph.env"
 
@@ -599,6 +635,47 @@ def _backfill_state(repo: str) -> dict[str, Any]:
     return st
 
 
+# Orchestration state for the sequential backfill-all run. Per-repo job
+# state stays file-based (backfill-bedrock.sh owns .backfill-log/*.state.json);
+# this only tracks the run-everything sequence itself.
+_backfill_all_lock = threading.Lock()
+_backfill_all_state: dict[str, Any] = {"state": "idle", "current": None, "repos": {}}
+
+
+def _backfill_all_worker(repos: tuple[str, ...]) -> None:
+    """Run backfill-bedrock.sh for each repo in turn, recording progress.
+
+    Sequential on purpose — each backfill is a ``claude -p`` run, and
+    parallel runs contend for token rate limits and the git index.
+    """
+    script = PROJECT_ROOT / "scripts" / "backfill-bedrock.sh"
+    for repo in repos:
+        if _backfill_state(repo).get("state") == "running":
+            with _backfill_all_lock:
+                _backfill_all_state["repos"][repo] = "skipped (already running)"
+            continue
+        with _backfill_all_lock:
+            _backfill_all_state["current"] = repo
+            _backfill_all_state["repos"][repo] = "running"
+        try:
+            result = subprocess.run(  # noqa: S603
+                ["bash", str(script), repo],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                timeout=3600,
+            )
+            outcome = "done" if result.returncode == 0 else f"error (exit {result.returncode})"
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            LOG.warning("backfill-all: %s failed: %s", repo, exc)
+            outcome = f"error ({exc.__class__.__name__})"
+        with _backfill_all_lock:
+            _backfill_all_state["repos"][repo] = outcome
+    with _backfill_all_lock:
+        _backfill_all_state["state"] = "done"
+        _backfill_all_state["current"] = None
+        _backfill_all_state["finished_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+
 def _rebuild_site() -> bool:
     """Rebuild the static Astro site so a content mutation shows up.
 
@@ -763,6 +840,9 @@ def _content_watch_loop() -> None:
         if cur != last:
             last = cur
             LOG.info("content change detected — requesting rebuild")
+            # Content moved → the cached /api/status stats are stale; drop
+            # them now instead of waiting out the 30 s TTL.
+            _status_payload.cache_clear()  # type: ignore[attr-defined]
             _request_rebuild()
 
 
@@ -1224,6 +1304,7 @@ def _upstream_owner_repo(repo: str) -> str | None:
     return owner_repo
 
 
+@_ttl_cache(30.0)
 def _activity(limit: int = 50) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for repo in REPOS:
@@ -1254,6 +1335,19 @@ def _activity(limit: int = 50) -> list[dict[str, str]]:
             })
     rows.sort(key=lambda c: c["date_iso"], reverse=True)
     return rows[:limit]
+
+
+@_ttl_cache(30.0)
+def _status_payload() -> dict[str, Any]:
+    """The /api/status response body — TTL-cached because the home page
+    polls it and each compute walks git + frontmatter for every repo.
+    The content-watch loop clears the cache early when content changes."""
+    return {
+        "repos": {r: _repo_status(r) for r in REPOS},
+        "doctor": _doctor(),
+        "stats": _global_stats(),
+        "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1378,12 +1472,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/status")
     def status() -> dict[str, Any]:
-        return {
-            "repos": {r: _repo_status(r) for r in REPOS},
-            "doctor": _doctor(),
-            "stats": _global_stats(),
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
-        }
+        return _status_payload()
 
     @app.get("/api/drift/{repo}", response_class=PlainTextResponse)
     def drift(repo: str) -> str:
@@ -1424,6 +1513,79 @@ def create_app() -> FastAPI:
             "github": _github_health(),
             "doctor": _doctor(),
         }
+
+    @app.get("/api/errors")
+    def errors_log(n: int = 50) -> dict[str, Any]:
+        """Tail of ``.cartograph/errors.log`` — script-side failures.
+
+        ``scripts/lib/errors.sh`` appends one line per failure as
+        ``ISO8601<TAB>script<TAB>message``. Returns the last ``n`` entries
+        (default 50, capped at 500), newest first; an empty list when the
+        log doesn't exist yet.
+        """
+        n = max(1, min(n, 500))
+        path = PROJECT_ROOT / ".cartograph" / "errors.log"
+        if not path.is_file():
+            return {"errors": [], "count": 0}
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"cannot read errors.log: {exc}") from exc
+        entries: list[dict[str, str]] = []
+        for line in reversed(lines):
+            if not line.strip():
+                continue
+            parts = line.split("\t", 2)
+            if len(parts) == 3:
+                ts, script, message = parts
+            else:
+                # Malformed line — keep it visible rather than dropping it.
+                ts, script, message = "", "", line
+            entries.append({"ts": ts, "script": script, "message": message})
+            if len(entries) >= n:
+                break
+        return {"errors": entries, "count": len(entries)}
+
+    @app.get("/api/injection-cost")
+    def injection_cost() -> dict[str, Any]:
+        """Per-repo orientation-injection cost estimate.
+
+        The UserPromptSubmit hook injects each repo's three bedrock guides
+        plus ``guides/seams.md`` in full on every turn. This sums their
+        char lengths and estimates tokens (chars // 4) so the UI can flag
+        repos whose bedrock has outgrown the injection budget
+        (``CARTOGRAPH_BEDROCK_TOKEN_BUDGET``, default 20000 tokens).
+        """
+        budget = int(os.environ.get("CARTOGRAPH_BEDROCK_TOKEN_BUDGET", "20000"))
+
+        def _chars(path: Path) -> int:
+            try:
+                return len(path.read_text(encoding="utf-8")) if path.is_file() else 0
+            except OSError:
+                return 0
+
+        seams_chars = _chars(GUIDES_DIR / "seams.md")
+        repos: dict[str, Any] = {}
+        any_warn = False
+        for repo in REPOS:
+            files: dict[str, int] = {}
+            chars = 0
+            for name in ("overview.md", "architecture.md", "conventions.md"):
+                size = _chars(GUIDES_DIR / repo / name)
+                files[name] = size // 4
+                chars += size
+            files["seams.md"] = seams_chars // 4
+            chars += seams_chars
+            est = chars // 4
+            warn = est > budget
+            any_warn = any_warn or warn
+            repos[repo] = {
+                "chars": chars,
+                "est_tokens": est,
+                "files": files,
+                "budget_warn": warn,
+            }
+        return {"repos": repos, "budget_tokens": budget, "budget_warn": any_warn}
 
     @app.post("/api/server/restart")
     def restart_server() -> dict[str, Any]:
@@ -1597,6 +1759,21 @@ def create_app() -> FastAPI:
                 else "rejected (revise agent unavailable — fix manually)."
             ),
         }
+
+    @app.post("/api/topic/{repo}/{topic}/touch")
+    def touch_topic(repo: str, topic: str) -> dict[str, Any]:
+        """Set ``last_revised: <today>`` in the topic's frontmatter — nothing else.
+
+        Powers the stale-topic "touch" action: the human confirms a topic
+        is still accurate without editing its content. Same repo/slug
+        validation and traversal defences as the review endpoints (via
+        ``_resolve_topic_path``).
+        """
+        path = _resolve_topic_path(repo, topic)
+        today = datetime.now(tz=timezone.utc).date().isoformat()
+        _fm_set_or_remove(path, {"last_revised": today})
+        _request_rebuild()
+        return {"ok": True, "last_revised": today}
 
     @app.post("/api/drift-check/{repo}")
     def drift_check_repo(repo: str) -> dict[str, Any]:
@@ -3329,6 +3506,64 @@ def create_app() -> FastAPI:
             ),
         }
 
+    @app.post("/api/backfill/all")
+    def backfill_all() -> dict[str, Any]:
+        """Backfill every tracked repo sequentially in one background thread.
+
+        Registered before ``/api/backfill/{repo}`` so the literal ``all``
+        wins route matching. Each repo runs the same backfill-bedrock.sh
+        job the per-repo endpoint fires; poll ``GET /api/backfill/all/status``
+        for the sequence's progress.
+        """
+        script = PROJECT_ROOT / "scripts" / "backfill-bedrock.sh"
+        if not script.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="scripts/backfill-bedrock.sh missing",
+            )
+        with _backfill_all_lock:
+            if _backfill_all_state["state"] == "running":
+                return {
+                    "ok": False,
+                    "state": "running",
+                    "note": "a backfill-all run is already in progress",
+                }
+            _backfill_all_state.update({
+                "state": "running",
+                "current": None,
+                "started_at": datetime.now(tz=timezone.utc).isoformat(),
+                "finished_at": None,
+                "repos": {r: "pending" for r in REPOS},
+            })
+        threading.Thread(
+            target=_backfill_all_worker,
+            args=(REPOS,),
+            daemon=True,
+            name="backfill-all",
+        ).start()
+        return {
+            "ok": True,
+            "state": "running",
+            "repos": list(REPOS),
+            "note": "backfill-all started — poll /api/backfill/all/status",
+        }
+
+    @app.get("/api/backfill/all/status")
+    def backfill_all_status() -> dict[str, Any]:
+        """Progress of the sequential backfill-all run.
+
+        ``repos`` is the orchestrator's view (pending/running/done/error/
+        skipped); ``jobs`` attaches each repo's own state file via the same
+        reader the per-repo status endpoint uses.
+        """
+        with _backfill_all_lock:
+            st: dict[str, Any] = {
+                k: (dict(v) if isinstance(v, dict) else v)
+                for k, v in _backfill_all_state.items()
+            }
+        st["jobs"] = {r: _backfill_state(r) for r in REPOS}
+        return st
+
     @app.post("/api/backfill/{repo}")
     def backfill_bedrock(repo: str) -> dict[str, Any]:
         """Start a bedrock re-backfill in the background — non-blocking.
@@ -3615,11 +3850,16 @@ def create_app() -> FastAPI:
         type: str | None = None,
         repo: str | None = None,
         tag: str | None = None,
-        limit: int = 200,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> dict[str, Any]:
         """Faceted index of library content (design/paper/research/walkthrough/learn).
 
-        See claude-designs/cartograph/ui-overhaul/README.md.
+        See claude-designs/cartograph/ui-overhaul/README.md. Passing
+        ``limit`` and/or ``offset`` switches to paginated mode: the full
+        result set is fetched, ``total`` is added to the response, and the
+        page is sliced server-side. Without either param the legacy
+        behavior (first 200 results, no ``total``) is unchanged.
         """
         filters = []
         layer_map = {
@@ -3632,8 +3872,18 @@ def create_app() -> FastAPI:
             filters.append(f"repo={repo}")
         if tag:
             filters.append(f"tag={tag}")
-        results = _run_query(filters, fmt="json", limit=limit)
-        return {"results": results, "filters": {"type": type, "repo": repo, "tag": tag}}
+        out: dict[str, Any] = {"filters": {"type": type, "repo": repo, "tag": tag}}
+        if limit is None and offset is None:
+            out["results"] = _run_query(filters, fmt="json", limit=200)
+            return out
+        results = _run_query(filters, fmt="json", limit=0)
+        start = max(0, offset or 0)
+        lim = max(0, limit) if limit is not None else 200
+        out["results"] = results[start:start + lim] if lim else results[start:]
+        out["total"] = len(results)
+        out["limit"] = lim
+        out["offset"] = start
+        return out
 
     @app.get("/api/episodes-list")
     def episodes_list(
@@ -3641,10 +3891,17 @@ def create_app() -> FastAPI:
         tag: str | None = None,
         unreviewed: bool = False,
         auto_drafted: bool | None = None,
-        limit: int = 200,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> dict[str, Any]:
         """Filterable episode list. Renamed from /api/episodes to avoid
-        collision with any future per-episode RESTful surface."""
+        collision with any future per-episode RESTful surface.
+
+        Passing ``limit`` and/or ``offset`` switches to paginated mode:
+        the full set is fetched, date-sorted, then sliced, and ``total``
+        is added to the response. Without either param the legacy
+        behavior (first 200 by path, no ``total``) is unchanged.
+        """
         filters = ["layer=episode"]
         if repo:
             filters.append(f"repo={repo}")
@@ -3656,11 +3913,22 @@ def create_app() -> FastAPI:
             filters.append("auto_drafted=true")
         elif auto_drafted is False:
             filters.append("!auto_drafted")
-        results = _run_query(filters, fmt="json", limit=limit)
+        paginating = limit is not None or offset is not None
+        results = _run_query(filters, fmt="json", limit=0 if paginating else 200)
         # Reverse-chronological by date frontmatter (cartograph_query sorts lex by path,
         # which for YYYY-MM/YYYY-MM-DD-* is *near*-chronological but not exact). Sort here.
         results.sort(key=lambda r: r.get("date") or "", reverse=True)
-        return {"results": results, "filters": {"repo": repo, "tag": tag, "unreviewed": unreviewed, "auto_drafted": auto_drafted}}
+        out: dict[str, Any] = {"filters": {"repo": repo, "tag": tag, "unreviewed": unreviewed, "auto_drafted": auto_drafted}}
+        if paginating:
+            start = max(0, offset or 0)
+            lim = max(0, limit) if limit is not None else 200
+            out["results"] = results[start:start + lim] if lim else results[start:]
+            out["total"] = len(results)
+            out["limit"] = lim
+            out["offset"] = start
+        else:
+            out["results"] = results
+        return out
 
     @app.get("/api/find")
     def find_bm25(q: str, k: int = 10, repo: str | None = None, layer: str | None = None) -> dict[str, Any]:
