@@ -291,10 +291,14 @@ import Card from '~/components/Card.astro';
           <code>scripts/eval/run-eval.sh</code> holds 27 architecture questions
           across the six repos, each graded by regex groups. Every question
           runs as a headless session twice — orientation on vs
-          <code>CARTOGRAPH_INJECT_DISABLE=1</code> — and the per-arm deltas in
-          score, turns, and wall time are the regression gate for every
-          retrieval change. Results time-series under
-          <code>.cartograph/eval/</code>.
+          <code>CARTOGRAPH_INJECT_DISABLE=1</code> (which disables every
+          injection surface) — and the per-arm deltas in score, turns, and
+          wall time are the regression gate for every retrieval change.
+          Refusal-shaped results (usage limits, overloads) are auto-flagged
+          and excluded. Results time-series under
+          <code>.cartograph/eval/</code>. Baseline (2026-06): 27/27 pass on
+          both arms in ~5–6 turns — the corpus answers either way; the A/B
+          measures push vs pull, not corpus vs nothing.
         </p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-4">

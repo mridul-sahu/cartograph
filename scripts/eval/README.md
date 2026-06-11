@@ -45,6 +45,17 @@ Runs are sequential, read-only (`--allowedTools Read,Grep,Glob`), and set
 `CARTOGRAPH_HEADLESS=1` so SessionStart/Stop hooks skip heavy and
 self-spawning paths — an eval run never enqueues curation work.
 
+**What the arms actually measure.** `CARTOGRAPH_INJECT_DISABLE=1` turns
+off every injection surface (UserPromptSubmit + the PreToolUse hooks),
+but the off arm still loads CLAUDE.md (which says "cartograph first")
+and can still `Read` guides/ on its own initiative. So the comparison is
+**push (injected orientation) vs pull (agent-initiated retrieval)** —
+not cartograph vs no knowledge base. Identical pass rates with similar
+turn counts mean the corpus is discoverable either way on Q&A-shaped
+tasks; the push layer's value concentrates in tasks where the agent
+doesn't know what to look for. Refusal-shaped results (usage limits,
+overloads) are detected, flagged `error`, and excluded from the summary.
+
 **Run evals on a quiet machine.** Concurrent agent fan-outs contend for
 API throughput and degrade eval sessions into 1-2-turn no-exploration
 answers that score 0 on both arms — measured 2026-06-10: the same

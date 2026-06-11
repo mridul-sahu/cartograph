@@ -110,6 +110,18 @@ try:
 except ValueError:
     resp = {}
 answer = resp.get("result") or ""
+# Refusals are not answers. An exhausted usage limit or an overload error
+# comes back as plausible result text and silently poisons the baseline
+# (observed 2026-06-10: 6 questions "failed" both arms with "You've hit
+# your session limit"). Flag, don't grade.
+ERROR_SHAPES = (
+    r"hit your session limit",
+    r"rate.?limit",
+    r"overloaded",
+    r"usage limit",
+    r"api error",
+)
+run_error = next((p for p in ERROR_SHAPES if re.search(p, answer[:200], re.IGNORECASE)), None)
 groups = q.get("expect_all", [])
 hit = sum(
     1 for grp in groups
@@ -119,8 +131,9 @@ rec = {
     "id": q["id"],
     "repo": q["repo"],
     "arm": os.environ["ARM"],
-    "score": round(hit / len(groups), 3) if groups else 0.0,
-    "pass": bool(groups) and hit == len(groups),
+    "error": run_error,
+    "score": None if run_error else (round(hit / len(groups), 3) if groups else 0.0),
+    "pass": (not run_error) and bool(groups) and hit == len(groups),
     "num_turns": resp.get("num_turns"),
     "duration_ms": resp.get("duration_ms"),
     "wall_s": int(os.environ["WALL"]),
@@ -132,8 +145,11 @@ rec = {
 }
 with open(sys.argv[1], "a") as fh:
     fh.write(json.dumps(rec) + "\n")
-print(f"[eval] {rec['id']:14s} {rec['arm']:3s} score={rec['score']:.2f} "
-      f"turns={rec['num_turns']} wall={rec['wall_s']}s")
+if run_error:
+    print(f"[eval] {rec['id']:14s} {rec['arm']:3s} ERROR ({run_error}) — not graded")
+else:
+    print(f"[eval] {rec['id']:14s} {rec['arm']:3s} score={rec['score']:.2f} "
+          f"turns={rec['num_turns']} wall={rec['wall_s']}s")
 PY
 }
 
@@ -150,7 +166,11 @@ python3 - "$results" <<'PY'
 import json, sys, collections
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 by_arm = collections.defaultdict(list)
+errored = 0
 for r in rows:
+    if r.get("error"):
+        errored += 1
+        continue
     by_arm[r["arm"]].append(r)
 for arm, rs in sorted(by_arm.items()):
     n = len(rs)
@@ -158,4 +178,6 @@ for arm, rs in sorted(by_arm.items()):
     print(f"  arm={arm:3s} n={n:3d} mean_score={mean('score'):.2f} "
           f"pass_rate={sum(r['pass'] for r in rs)/n:.0%} "
           f"mean_turns={mean('num_turns'):.1f} mean_wall={mean('wall_s'):.0f}s")
+if errored:
+    print(f"  ({errored} errored run(s) excluded — rerun those questions)")
 PY

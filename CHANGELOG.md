@@ -28,6 +28,26 @@ publish time.)
 
 ---
 
+## v2026.06.11
+
+### Added
+
+- Eval runner detects refusal-shaped results (usage limits, rate limits,
+  overloads): flagged `error`, excluded from summaries, surfaced as a
+  rerun hint. Per-run `answer_head` snippet recorded for diagnosis.
+
+### Changed
+
+- `CARTOGRAPH_INJECT_DISABLE=1` now disables **every** injection surface
+  (prompt-time orientation + pre-Read + pre-Edit augmentation), making
+  the eval harness's off arm truly injection-free.
+- Eval docs state what the A/B measures (push vs pull retrieval — the
+  off arm can still `Read` the notebook) and require a quiet machine.
+- launchd agents use neutral `com.cartograph.*` labels; the installer
+  migrates installs made under the earlier labels.
+
+---
+
 ## v2026.06.10
 
 ### Added

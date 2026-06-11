@@ -500,10 +500,15 @@ mechanisms keep cartograph honest:
 
 - **Golden-question eval harness** (`scripts/eval/run-eval.sh`): a set of
   graded architecture questions per repo, each run headlessly twice —
-  orientation on vs `CARTOGRAPH_INJECT_DISABLE=1`. The per-arm deltas in
-  score / turns / wall time are the regression gate for every retrieval
-  change. Results time-series under `.cartograph/eval/`. Run evals on a
-  quiet machine — concurrent agent load degrades sessions silently.
+  orientation on vs `CARTOGRAPH_INJECT_DISABLE=1` (which disables every
+  injection surface: prompt-time, pre-Read, pre-Edit). The per-arm deltas
+  in score / turns / wall time are the regression gate for every retrieval
+  change. Refusal-shaped results (usage limits, overloads) are detected,
+  flagged, and excluded from summaries. Results time-series under
+  `.cartograph/eval/`. Run evals on a quiet machine — concurrent agent
+  load degrades sessions silently. Note the off arm can still *pull* the
+  notebook via `Read`, so the comparison measures push vs pull retrieval,
+  not notebook vs nothing.
 - **Usage feedback loop**: every injected note is recorded; a follow-up
   `Read` of the note (or a file it cites) marks it *used*, which boosts its
   future ranking. Notes injected repeatedly and never used sink. Per-session

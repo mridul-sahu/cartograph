@@ -21,6 +21,10 @@
 
 set -uo pipefail
 
+# Same kill switch as inject-context.sh — the eval harness's off arm must
+# disable EVERY injection surface, not just UserPromptSubmit.
+[[ "${CARTOGRAPH_INJECT_DISABLE:-0}" == "1" ]] && exit 0
+
 CARTOGRAPH_ROOT="${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}"
 INDEX="$CARTOGRAPH_ROOT/.cartograph/index/by-file.json"
 WORKSPACE_REAL="$(cd "$CARTOGRAPH_ROOT/workspace" 2>/dev/null && pwd -P || echo "")"
