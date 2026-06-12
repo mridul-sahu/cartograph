@@ -7,6 +7,8 @@
 set -uo pipefail
 
 CARTOGRAPH_ROOT="${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}"
+# shellcheck source=lib/headless.sh
+source "$(dirname "$0")/lib/headless.sh"
 repo="${1:?usage: $0 <repo> <slug>}"
 slug="${2:?usage: $0 <repo> <slug>}"
 
@@ -38,6 +40,22 @@ PY
   cat "$status_path"
 }
 
+# Cap reached / kill switch on: not a failure — the report stays and a later
+# pass retries. Distinct status so poll-based UIs don't show a scary error.
+emit_deferred() {
+  python3 - "$started_iso" "$1" "$started_epoch" <<'PY' > "$status_path.tmp" && mv "$status_path.tmp" "$status_path"
+import json, sys, time
+print(json.dumps({
+    "status": "deferred", "detail": sys.argv[2],
+    "started_at": sys.argv[1],
+    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "elapsed_secs": int(time.time()) - int(sys.argv[3]),
+}))
+PY
+  cat "$status_path"
+  exit 75
+}
+
 emit_error() {
   python3 - "$started_iso" "$1" "$started_epoch" <<'PY' > "$status_path.tmp" && mv "$status_path.tmp" "$status_path"
 import json, sys, time
@@ -62,7 +80,6 @@ if [[ ! -f "$report_abs" ]]; then
   emit_done '{"action":"no-op","sections_changed":0,"summary":"no drift report — nothing to fix"}'
   exit 0
 fi
-if ! command -v claude >/dev/null 2>&1; then emit_error "claude CLI not on PATH"; fi
 
 tmp="$(mktemp -t cartograph-drift-fix.XXXXXX)"
 trap 'rm -f "$tmp"' EXIT
@@ -92,9 +109,18 @@ PROMPT_HEADER
   echo "TODAY: $(date +%Y-%m-%d)"
 } > "$tmp"
 
-raw="$(claude -p --output-format text \
+# Single chokepoint for headless spawns: cg_headless_run enforces the global
+# CARTOGRAPH_HEADLESS_MAX cap, the recursion guard, and the kill switch.
+raw="$(cg_headless_run "drift-fix:$repo/$slug" -- \
+  -p --output-format text \
   --allowedTools "Read,Edit,Bash,Glob,Grep" \
-  < "$tmp" 2>&1 | tail -c 8192)"
+  < "$tmp" 2>&1)"
+rc=$?
+case "$rc" in
+  75|77) emit_deferred "headless spawn deferred/refused (rc=$rc)" ;;
+  78)    emit_error "claude CLI not found" ;;
+esac
+raw="$(printf '%s' "$raw" | tail -c 8192)"
 
 json="$(printf '%s' "$raw" | grep -oE '\{[^{}]*"action"[^{}]*\}' | tail -1)"
 

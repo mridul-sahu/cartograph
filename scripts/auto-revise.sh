@@ -30,7 +30,11 @@
 #   - `claude` CLI installed (the one that runs Claude Code).
 #   - Run from inside <cartograph-root>/ (or set CARTOGRAPH_ROOT).
 #
-# Opt-in. Don't put in cron / SessionStart. Run manually when needed.
+# Safe to run unattended: the claude call routes through lib/headless.sh,
+# so the global agent cap, recursion guard, and kill switch all apply.
+# drift-drain.sh (serve.py loop + maintenance.sh) calls this automatically;
+# /auto-revise and the UI button remain the manual paths. Exits 75/77 when
+# the spawn was deferred/refused — the drift report is kept for a retry.
 
 set -uo pipefail
 
@@ -192,6 +196,12 @@ resolve_one() {
   local rc=$?
   rm -f "$prompt_file"
 
+  if (( rc == 75 || rc == 77 )); then
+    echo "auto-revise: deferred for '$repo' (rc=$rc) — headless cap reached or disabled; report kept for retry"
+    rm -f "$log"   # holds only the deferral notice, not a transcript
+    return "$rc"
+  fi
+
   echo "auto-revise: claude exited $rc; tail of transcript:"
   tail -15 "$log"
 
@@ -212,7 +222,13 @@ if [[ "$target" == "--all" ]]; then
     any=1
     repo="$(basename "${f%.md}")"
     echo "─── $repo ───"
-    resolve_one "$repo"
+    rc=0
+    resolve_one "$repo" || rc=$?
+    if (( rc == 75 || rc == 77 )); then
+      # Cap is occupied (or kill switch on) — every later spawn would defer
+      # too. Stop the pass; the remaining reports retry next time.
+      exit "$rc"
+    fi
     echo
   done
   if [[ $any -eq 0 ]]; then

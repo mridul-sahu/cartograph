@@ -2,9 +2,9 @@
 # scripts/maintenance.sh — the nightly maintenance entrypoint (also safe to
 # run by hand). One sequential pass that:
 #
-#   a. resolves open drift — repo-level reports via auto-revise.sh, per-topic
-#      reports via drift-fix.sh — one at a time (auto-revise routes its
-#      claude call through cg_headless_run; drift-fix is synchronous);
+#   a. resolves open drift via drift-drain.sh — repo-level reports through
+#      auto-revise.sh, per-topic through drift-fix.sh, every claude call
+#      under the cg_headless_run cap;
 #   b. runs the content lint and records hard failures;
 #   c. re-runs the anchor-coverage audit and enqueues an anchor-fix curation
 #      task per gapped topic;
@@ -26,7 +26,6 @@ source "$(dirname "$0")/lib/errors.sh"
 cg_autospawn_guard   # never run from inside a headless agent / kill switch on
 
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
-DRIFT_DIR="$CARTOGRAPH_ROOT/.drift-reports"
 STATE_DIR="$CARTOGRAPH_ROOT/.cartograph"
 MAINT_LOG="$STATE_DIR/maintenance.log"
 
@@ -38,34 +37,17 @@ drain_rc=0
 archived=0
 
 # ── a. drift resolution ─────────────────────────────────────────────────
-# Repo-level drift reports → auto-revise.sh, one repo at a time.
-for report in "$DRIFT_DIR"/*.md; do
-  [[ -f "$report" ]] || continue
-  repo="$(basename "${report%.md}")"
-  echo "maintenance: auto-revise drift for '$repo'"
-  rc=0
-  bash "$SCRIPTS/auto-revise.sh" "$repo" || rc=$?
-  if (( rc != 0 )); then
-    cg_log_error maintenance "auto-revise $repo failed (rc=$rc)"
-  fi
-  drift_repos=$((drift_repos + 1))
-done
-
-# Per-topic drift reports (.drift-reports/topics/<repo>/<slug>.md) →
-# drift-fix.sh <repo> <slug>, sequentially.
-if [[ -d "$DRIFT_DIR/topics" ]]; then
-  while IFS= read -r report; do
-    repo="$(basename "$(dirname "$report")")"
-    slug="$(basename "${report%.md}")"
-    echo "maintenance: drift-fix topic '$repo/$slug'"
-    rc=0
-    bash "$SCRIPTS/drift-fix.sh" "$repo" "$slug" || rc=$?
-    if (( rc != 0 )); then
-      cg_log_error maintenance "drift-fix $repo/$slug failed (rc=$rc)"
-    fi
-    drift_topics=$((drift_topics + 1))
-  done < <(find "$DRIFT_DIR/topics" -mindepth 2 -maxdepth 2 -name '*.md' -type f 2>/dev/null | sort)
-fi
+# One drift-drain pass: repo-level reports via auto-revise.sh, per-topic via
+# drift-fix.sh — same path the serve.py drift loop uses. The drain stops
+# early when the headless cap defers; whatever remains retries next pass.
+drift_out="$(bash "$SCRIPTS/drift-drain.sh" drain)" \
+  || cg_log_error maintenance "drift-drain failed"
+printf '%s\n' "$drift_out"
+drift_summary="$(printf '%s\n' "$drift_out" | grep -E '^drift-drain: repos=' | tail -1)"
+drift_repos="$(printf '%s' "$drift_summary" | grep -oE 'repos=[0-9]+' | grep -oE '[0-9]+')"
+drift_topics="$(printf '%s' "$drift_summary" | grep -oE 'topics=[0-9]+' | grep -oE '[0-9]+')"
+drift_repos="${drift_repos:-0}"
+drift_topics="${drift_topics:-0}"
 
 # ── b. content lint ─────────────────────────────────────────────────────
 lint_out="$(bash "$SCRIPTS/lint-content.sh" 2>/dev/null)" || {

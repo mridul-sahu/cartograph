@@ -1,5 +1,5 @@
 ---
-description: Headless drift-resolution via `claude -p` — closes drift reports automatically (opt-in)
+description: Headless drift-resolution via `claude -p` — manual trigger for the same drain the serve.py drift loop runs on an interval
 allowed-tools: Bash
 ---
 

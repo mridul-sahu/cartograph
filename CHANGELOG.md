@@ -32,6 +32,14 @@ publish time.)
 
 ### Added
 
+- **Drift auto-fix loop**: the server now resolves open drift reports on
+  an interval (default 30 min) — repo-level reports via the auto-revise
+  path, per-topic reports via the per-citation fixer — instead of waiting
+  for a manual `/auto-revise` or the nightly maintenance pass. New
+  `scripts/drift-drain.sh` runs one pass over all open reports and stops
+  early when the agent cap is occupied; deferred reports retry next pass.
+  Toggle with `CARTOGRAPH_DRIFT_AUTOFIX`, interval via
+  `CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL` (both in the settings UI).
 - **Auto-review pipeline**: `scripts/auto-review-scan.sh` enqueues notes
   awaiting review (≤12 per scan); the batched curation agent judges each
   against the quality bar with anchor spot-checks, writes UI-readable
@@ -50,6 +58,10 @@ publish time.)
 
 ### Fixed
 
+- The per-topic drift fixer now routes through the global headless-agent
+  cap — it previously spawned `claude -p` directly, uncapped and outside
+  the recursion guard. When the cap is occupied it reports `deferred`
+  and keeps the report for a later pass instead of erroring.
 - Query language `!key` now treats explicit boolean `false` as unset.
   The canonical template writes `rejected: false`, so `!rejected`
   matched nothing and the review queue had been silently empty — the

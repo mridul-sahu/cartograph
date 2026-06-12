@@ -252,6 +252,12 @@ CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
     {"key": "CARTOGRAPH_CURATE_BATCH_MAX", "group": "Headless control", "type": "int",
      "default": "8", "applies": "immediate",
      "label": "Curate batch size", "help": "Max tasks one drain agent handles per pass; the rest drain next interval."},
+    {"key": "CARTOGRAPH_DRIFT_AUTOFIX", "group": "Headless control", "type": "bool",
+     "default": "1", "applies": "immediate",
+     "label": "Drift auto-fix", "help": "0 = pause the background drift-drain loop; reports wait for /auto-revise or maintenance."},
+    {"key": "CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "group": "Headless control", "type": "int",
+     "default": "1800", "applies": "restart",
+     "label": "Drift drain interval (s)", "help": "Seconds between drift-drain passes (auto-revise + drift-fix under the headless cap)."},
     {"key": "CARTOGRAPH_BUILD_MIN_INTERVAL", "group": "Headless control", "type": "int",
      "default": "300", "applies": "restart",
      "label": "Min build interval (s)", "help": "Minimum seconds between static-site rebuilds (coalesces a fold storm into one build)."},
@@ -800,6 +806,14 @@ _AUTO_COMMIT_INTERVAL_SECONDS = 20
 # CARTOGRAPH_CURATE_INTERVAL (seconds); the floor is 60s.
 _CURATE_INTERVAL_SECONDS = max(60.0, float(os.environ.get("CARTOGRAPH_CURATE_INTERVAL", "1800")))
 
+# Drift auto-fix. upstream-sync.sh writes .drift-reports/<repo>.md at
+# SessionStart when upstream moved past the bedrock; topic-drift.sh writes
+# per-topic reports. This loop resolves them with drift-drain.sh — every
+# claude spawn under the lib/headless.sh cap — instead of waiting for a
+# human /auto-revise. Toggle via CARTOGRAPH_DRIFT_AUTOFIX (checked each
+# tick); interval via CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL (seconds, floor 60).
+_DRIFT_INTERVAL_SECONDS = max(60.0, float(os.environ.get("CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "1800")))
+
 
 def _content_fingerprint() -> tuple[int, float]:
     """(file count, newest mtime) across the content dirs — a cheap probe
@@ -1044,6 +1058,37 @@ def _curate_loop() -> None:
                 _drain_curation_queue()
         except Exception as exc:  # noqa: BLE001 — loop must never die
             LOG.warning("curate loop: %s", exc)
+
+
+def _drift_loop() -> None:
+    """Periodically resolve open drift reports via drift-drain.sh.
+
+    Same shape as _curate_loop: at most one drain pass per interval, and only
+    when a report is actually open. The drain runs agents sequentially under
+    the global headless cap and stops early when the cap defers, so it can
+    never stack on top of a running curation drain. CARTOGRAPH_DRIFT_AUTOFIX=0
+    pauses the loop without a restart. Never dies.
+    """
+    script = PROJECT_ROOT / "scripts" / "drift-drain.sh"
+    while True:
+        time.sleep(_DRIFT_INTERVAL_SECONDS)
+        try:
+            if os.environ.get("CARTOGRAPH_DRIFT_AUTOFIX", "1") == "0":
+                continue
+            count = subprocess.run(  # noqa: S603
+                ["bash", str(script), "count"],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+            if count and count != "0":
+                LOG.info("drift: %s open report(s) — draining", count)
+                r = subprocess.run(  # noqa: S603
+                    ["bash", str(script), "drain"],
+                    cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=1800,
+                )
+                out = (r.stdout or r.stderr).strip()
+                LOG.info("drift: %s", out.splitlines()[-1] if out else f"drain rc={r.returncode}")
+        except Exception as exc:  # noqa: BLE001 — loop must never die
+            LOG.warning("drift loop: %s", exc)
 
 
 def _request_rebuild() -> None:
@@ -4841,6 +4886,9 @@ def main() -> None:
     # loop drains it with ONE headless agent per interval (cap=1), replacing the
     # per-item spawn fan-out that swarmed the machine.
     threading.Thread(target=_curate_loop, daemon=True).start()
+    # Drift auto-fix — resolves open .drift-reports/ via drift-drain.sh on an
+    # interval, every claude spawn under the same headless cap as curation.
+    threading.Thread(target=_drift_loop, daemon=True).start()
     # uvicorn's reload mode imports by module string ("scripts.serve:app").
     # `python scripts/serve.py` only puts scripts/ on sys.path, not the
     # cartograph root — `app_dir` here prepends the root so both the

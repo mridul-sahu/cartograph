@@ -336,12 +336,16 @@ import Card from '~/components/Card.astro';
         </p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-4">
-        <div class="font-mono text-xs font-bold mb-1">Supervision + nightly maintenance</div>
+        <div class="font-mono text-xs font-bold mb-1">Drift auto-fix + nightly maintenance</div>
         <p class="text-sm text-muted">
-          <code>scripts/setup-launchd.sh</code> puts the server under
-          KeepAlive supervision and schedules a 03:30 maintenance pass:
-          drift auto-revision, content lint, anchor-gap fixes, curation
-          drain, session archival. The injection-cost card on
+          The server closes drift on its own: a background loop resolves
+          open drift reports every 30 minutes (repo-level via auto-revise,
+          per-topic via the per-citation fixer), one capped headless agent
+          at a time — pause with <code>CARTOGRAPH_DRIFT_AUTOFIX=0</code>.
+          <code>scripts/setup-launchd.sh</code> adds KeepAlive supervision
+          and a 03:30 maintenance backstop: the same drift drain, content
+          lint, anchor-gap fixes, curation drain, session archival. The
+          injection-cost card on
           <a href="/" class="text-accent hover:underline">Home</a> flags any
           repo whose bedrock outgrows its token budget.
         </p>

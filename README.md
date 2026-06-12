@@ -301,13 +301,19 @@ file individually. `/revise <topic>` reads the per-citation drift report
 and pre-stages `git log -p` for each changed citation — you edit with
 the diff already in front of you.
 
-Two ways to close drift:
+Three ways drift gets closed:
 
+- **Automatically:** the server runs a drift loop that resolves open
+  reports on an interval (default 30 min) — repo-level reports via the
+  auto-revise path, per-topic reports via the per-citation fixer — one
+  capped headless agent at a time, under the same global agent cap as
+  curation. Pause it with `CARTOGRAPH_DRIFT_AUTOFIX=0`; audit what it
+  changed via `git log` on `guides/`.
 - **Manually:** `/revise <topic>`; bump `last_revised:`; write a small
   episode.
-- **Autonomously:** `/auto-revise <topic>` invokes `claude -p` headlessly
-  to revise the topic in place, citing the new code. You review the diff
-  and accept or revert.
+- **On demand:** `/auto-revise <repo>` runs the same headless resolution
+  immediately instead of waiting for the loop. You review the diff and
+  accept or revert.
 
 ### 4. Bedrock backfill (headless rebuilds)
 
@@ -529,7 +535,10 @@ mechanisms keep cartograph honest:
 Operationally, `scripts/setup-launchd.sh` (macOS) puts the server under
 KeepAlive supervision and schedules a nightly maintenance pass — drift
 auto-revision, content lint, anchor-gap fixes, curation drain, session
-archival — so the compounding runs while you sleep.
+archival — so the compounding runs while you sleep. Drift doesn't wait
+for the night: the server's own drift loop resolves open reports on an
+interval throughout the day, so nightly maintenance is the backstop,
+not the only path.
 
 ---
 
