@@ -141,6 +141,12 @@ def build_index(root: Path) -> dict[str, Any]:
     for note in iter_notes(root):
         fm, body = parse_note(note)
         rel_note = str(note.relative_to(root))
+        # Anti-bloat: rejected notes don't belong in the reverse index —
+        # pre-Read augmentation would surface known-bad notes next to the
+        # file they mis-describe. (Superseded episodes stay: their anchors
+        # still locate code, and the superseding note may cite less.)
+        if fm.get("rejected") is True or str(fm.get("rejected", "")).strip() == "true":
+            continue
         layer = fm.get("layer") or _infer_layer(rel_note)
         repo = fm.get("repo") or _infer_repo(rel_note)
 

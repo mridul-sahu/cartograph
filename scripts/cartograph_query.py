@@ -168,9 +168,13 @@ class Filter:
         return cls(bool(neg), key, op or "", value or "")
 
     def matches(self, fm: dict[str, Any], body: str) -> bool:
-        # `!key` — true iff key is absent or null
+        # `!key` — true iff key is absent, null, or boolean-false. The
+        # canonical note template writes `rejected: false` explicitly, so
+        # treating only null as "unset" made `!rejected` reject every
+        # template-shaped note — the review queue sat silently empty.
         if self.negate and not self.op:
-            return is_null(fm.get(self.key))
+            v = fm.get(self.key)
+            return is_null(v) or v is False or (isinstance(v, str) and v.strip().lower() == "false")
 
         if self.key == "contains":
             return bool(re.search(rf"\b{re.escape(self.value)}\b", body, re.IGNORECASE))

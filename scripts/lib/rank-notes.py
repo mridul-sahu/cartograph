@@ -161,6 +161,9 @@ def main() -> int:
         if not text:
             continue
         frontmatter, body = split_frontmatter(text)
+        # Rejected notes never inject, regardless of layer.
+        if re.search(r"^rejected:[ \t]*true", frontmatter, re.MULTILINE):
+            continue
         if args.episode_filters and episode_excluded(frontmatter, args.repo):
             continue
         lower = text.lower()

@@ -27,6 +27,7 @@ fi
 "$DIR/upstream-sync.sh" || true
 bash "$DIR/digest.sh" || true
 bash "$DIR/auto-promote.sh" || true
+bash "$DIR/auto-review-scan.sh" || true
 # Validate frontmatter BEFORE the index builds — a malformed block makes a
 # note silently unretrievable; surface it instead.
 python3 "$DIR/validate-frontmatter.py" --root "$CARTOGRAPH_ROOT" \

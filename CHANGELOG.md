@@ -28,6 +28,35 @@ publish time.)
 
 ---
 
+## v2026.06.12
+
+### Added
+
+- **Auto-review pipeline**: `scripts/auto-review-scan.sh` enqueues notes
+  awaiting review (≤12 per scan); the batched curation agent judges each
+  against the quality bar with anchor spot-checks, writes UI-readable
+  opinions, and at high confidence auto-acts (`rejected: true` for
+  concrete defects, `superseded_by` for near-duplicate episodes). Runs
+  at SessionStart and in nightly maintenance, under the single-agent
+  concurrency cap. Files are never deleted.
+
+### Changed
+
+- Review surfaces hide auto-approved notes (`auto_approved_hidden` count
+  in the payload); contested reject opinions stay visible, pre-annotated.
+  An opinion older than the note's last edit is void.
+- Anti-bloat retrieval: rejected notes leave the BM25 corpus, reverse
+  index, and injection menus; superseded episodes leave BM25 + menus.
+
+### Fixed
+
+- Query language `!key` now treats explicit boolean `false` as unset.
+  The canonical template writes `rejected: false`, so `!rejected`
+  matched nothing and the review queue had been silently empty — the
+  root cause of zero rejections ever being recorded.
+
+---
+
 ## v2026.06.11
 
 ### Added

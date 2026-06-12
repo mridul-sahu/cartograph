@@ -108,6 +108,12 @@ else
   cg_log_error maintenance "anchor-coverage.py failed"
 fi
 
+# ── c2. enqueue pending notes for auto-review ───────────────────────────
+review_out="$(bash "$SCRIPTS/auto-review-scan.sh" 2>&1)" \
+  || cg_log_error maintenance "auto-review-scan failed"
+reviews_enqueued="$(printf '%s\n' "$review_out" | grep -oE 'enqueued [0-9]+' | grep -oE '[0-9]+' | head -1)"
+reviews_enqueued="${reviews_enqueued:-0}"
+
 # ── d. drain the curation queue (one batched headless agent) ────────────
 bash "$SCRIPTS/curate.sh" drain || drain_rc=$?
 if (( drain_rc != 0 )); then
@@ -122,7 +128,7 @@ archived="${archived:-0}"
 
 # ── f. summary ──────────────────────────────────────────────────────────
 mkdir -p "$STATE_DIR"
-summary="drift_repos=$drift_repos drift_topics=$drift_topics lint=$lint_status anchors_enqueued=$anchors_enqueued drain_rc=$drain_rc archived=$archived"
+summary="drift_repos=$drift_repos drift_topics=$drift_topics lint=$lint_status anchors_enqueued=$anchors_enqueued reviews_enqueued=$reviews_enqueued drain_rc=$drain_rc archived=$archived"
 printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$summary" >> "$MAINT_LOG" 2>/dev/null \
   || cg_log_error maintenance "could not write maintenance.log"
 echo "maintenance: $summary"

@@ -3682,6 +3682,51 @@ def create_app() -> FastAPI:
                 return []
         return result.stdout
 
+    def _opinion_for(rel: str) -> dict[str, Any] | None:
+        """Fresh stored opinion for a note (auto-review or UI-triggered).
+
+        Fresh = the opinion file is newer than the note's last edit; an
+        edited note invalidates its old opinion and re-enters review.
+        """
+        if not rel:
+            return None
+        key = rel[:-3] if rel.endswith(".md") else rel
+        op_path = PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{key.replace('/', '_')}.json"
+        note_path = PROJECT_ROOT / rel
+        try:
+            if op_path.stat().st_mtime < note_path.stat().st_mtime:
+                return None
+            op = json.loads(op_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if op.get("status") != "done" or not op.get("verdict"):
+            return None
+        return op
+
+    def _settle_reviewed(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+        """Drop approve-opinioned items from a pending list; annotate the rest.
+
+        An approve verdict settles the review — the human asked not to
+        re-review what auto-review already cleared. Reject-opinioned items
+        that were NOT auto-acted stay visible (contested calls), carrying
+        the opinion so triage starts pre-annotated.
+        """
+        kept: list[dict[str, Any]] = []
+        hidden = 0
+        for item in items:
+            op = _opinion_for(item.get("path") or "")
+            if op and op.get("verdict") == "approve":
+                hidden += 1
+                continue
+            if op:
+                item["opinion"] = {
+                    k: op.get(k)
+                    for k in ("verdict", "reason", "confidence", "auto_review", "finished_at")
+                    if op.get(k) is not None
+                }
+            kept.append(item)
+        return kept, hidden
+
     @app.get("/api/queue")
     def queue_json() -> dict[str, Any]:
         """Sectioned review queue. Composes cartograph_query results +
@@ -3702,10 +3747,14 @@ def create_app() -> FastAPI:
         # All non-rejected, non-reviewed episodes — auto-drafted OR
         # agent-authored. The previous query missed the latter, treating
         # claude-authored episodes as pre-blessed.
-        unreviewed_episodes = _run_query(["layer=episode", "!reviewed_by_human", "!rejected"])
+        unreviewed_episodes, _ = _settle_reviewed(
+            _run_query(["layer=episode", "!reviewed_by_human", "!rejected"])
+        )
         sections.append(_sec("Episodes awaiting review", unreviewed_episodes))
 
-        unblessed = _run_query(["layer=topic", "!reviewed_by_human", "!rejected"])
+        unblessed, _ = _settle_reviewed(
+            _run_query(["layer=topic", "!reviewed_by_human", "!rejected"])
+        )
         sections.append(_sec("Topics awaiting human review", unblessed))
 
         stale = _run_query(["layer=topic", f"last_revised<{cutoff_old}"])
@@ -4218,19 +4267,24 @@ def create_app() -> FastAPI:
 
         Topics use the same rule.
         """
-        episodes = _run_query(
+        episodes, ep_hidden = _settle_reviewed(_run_query(
             ["layer=episode", "!reviewed_by_human", "!rejected"],
             fmt="json", limit=limit,
-        )
+        ))
         for e in episodes:
             e["kind"] = "episode"
-        topics = _run_query(
+        topics, t_hidden = _settle_reviewed(_run_query(
             ["layer=topic", "!reviewed_by_human", "!rejected"],
             fmt="json", limit=limit,
-        )
+        ))
         for t in topics:
             t["kind"] = "topic"
-        return {"episodes": episodes, "topics": topics, "total": len(episodes) + len(topics)}
+        return {
+            "episodes": episodes,
+            "topics": topics,
+            "total": len(episodes) + len(topics),
+            "auto_approved_hidden": ep_hidden + t_hidden,
+        }
 
     def _spawn_fix_job(kind: str, repo: str, slug: str) -> dict[str, Any]:
         """Fire-and-forget spawn of scripts/<kind>-fix.sh.

@@ -517,6 +517,14 @@ mechanisms keep cartograph honest:
   enqueues) append to `.cartograph/errors.log` and surface on the console.
   Curation drains account per task — failed tasks stay queued and retry
   instead of vanishing with their batch.
+- **Auto-review + bloat control**: notes awaiting review are judged in
+  capped nightly batches (≤12/scan, ONE headless agent at a time) that
+  spot-check anchors against the code. Approves leave the review queue
+  silently; confident defects get `rejected: true`; near-duplicate
+  episodes get `superseded_by`. Rejected/superseded notes drop out of
+  the BM25 corpus and injection menus — files are never deleted. Only
+  contested calls reach the human, pre-annotated with verdict + reason;
+  editing a note voids its opinion and re-enters review.
 
 Operationally, `scripts/setup-launchd.sh` (macOS) puts the server under
 KeepAlive supervision and schedules a nightly maintenance pass — drift

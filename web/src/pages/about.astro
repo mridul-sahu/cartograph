@@ -108,7 +108,8 @@ import Card from '~/components/Card.astro';
         <p class="text-sm text-muted">
           Fetches upstream, opens drift reports if bedrock fell behind, rebuilds
           the file-reverse-index + BM25 index, writes today's diary entry,
-          auto-promotes any tag with ≥3 undistilled episodes into a topic note.
+          auto-promotes any tag with ≥3 undistilled episodes into a topic note,
+          and enqueues pending notes for capped auto-review.
         </p>
       </li>
       <li class="border-2 border-[var(--border-soft)] p-3">
@@ -319,6 +320,19 @@ import Card from '~/components/Card.astro';
           <a href="/console/" class="text-accent hover:underline">console</a>.
           Curation drains account per task — a failed task stays queued and
           retries instead of being silently dropped with its batch.
+        </p>
+      </div>
+      <div class="border-2 border-[var(--border-soft)] p-4">
+        <div class="font-mono text-xs font-bold mb-1">Auto-review + bloat control</div>
+        <p class="text-sm text-muted">
+          Notes awaiting review are judged in nightly batches by ONE capped
+          headless agent (≤12/scan) that spot-checks anchors against the
+          code. Approves leave the review queue silently; confident defects
+          get <code>rejected: true</code>; near-duplicate episodes get
+          <code>superseded_by</code> — and retired notes drop out of BM25 +
+          injection menus (files are never deleted). Only contested calls
+          reach the human, pre-annotated with verdict + reason. Editing a
+          note voids its opinion and re-enters review.
         </p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-4">

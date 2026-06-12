@@ -12,6 +12,7 @@
 #   curate.sh enqueue episode  <repo> <session-log-relpath>
 #   curate.sh enqueue research <repo> <session-log-relpath>
 #   curate.sh enqueue anchor   <repo> <topic-slug>
+#   curate.sh enqueue review   <repo|episodes> <slug>
 #   curate.sh drain        # batch-process everything queued (1 agent)
 #   curate.sh list         # show pending tasks
 #   curate.sh log [n]      # show the last n batch outcomes (default 5)
@@ -41,7 +42,7 @@ cg_enqueue() {
     echo "curate enqueue: need <kind> <arg1> <arg2>" >&2; return 2
   }
   case "$kind" in
-    fold|promote|episode|research|anchor) : ;;
+    fold|promote|episode|research|anchor|review) : ;;
     *) echo "curate: unknown kind '$kind'" >&2; return 2 ;;
   esac
   mkdir -p "$QUEUE_DIR"
@@ -103,6 +104,40 @@ If the session log \`$b\` (repo \`$a\`) consulted external material worth
 keeping, draft a research or paper note under \`research/$a/\` or \`papers/$a/\`
 with \`auto_drafted: true\` in frontmatter. If the fetches were incidental,
 write nothing for this task and say so in your summary.
+EOF
+      ;;
+    review)
+      cat <<EOF
+Auto-review one pending note for quality and bloat. Locate it first:
+- if \`$a\` is \`episodes\`: the note is the unique Glob match of \`episodes/*/$b.md\`;
+- otherwise it is \`guides/$a/topics/$b.md\`.
+Read it fully, then judge it. APPROVE unless you find a CONCRETE defect:
+  - factual contradiction with what the cited code actually does (spot-check
+    1-2 of its file:NNN anchors against workspace/);
+  - hallucinated function/API names;
+  - missing critical anchors (a note about file X citing nothing in X);
+  - stub / TODO / placeholder content;
+  - trivially-obvious insight (restates what any reader of the file sees);
+  - NEAR-DUPLICATE bloat: Grep episodes/ and guides/*/topics/ for the note's
+    key terms — if another non-rejected note already covers the SAME insight
+    (not merely the same subsystem), this one is redundant.
+Then act, in this order:
+1. ALWAYS write the opinion file \`.cartograph/jobs/opinion-<key>.json\`,
+   where <key> is the note's repo-relative path with every \`/\` replaced by
+   \`_\` and the trailing \`.md\` stripped
+   (e.g. episodes/2026-06/foo.md → opinion-episodes_2026-06_foo.json).
+   Single-line JSON, exactly these fields:
+   {"status":"done","verdict":"approve|reject","reason":"<one sentence>","confidence":"high|medium|low","auto_review":true,"finished_at":"<UTC ISO8601>"}
+2. AUTO-ACT only at high confidence (otherwise the opinion file is the only
+   output — leave the note untouched):
+   - reject + high → set \`rejected: true\` and add
+     \`review_notes: <reason> (auto-review $today)\` in the note's
+     frontmatter. NEVER delete the file.
+   - near-duplicate + high → on the WEAKER of the pair set
+     \`superseded_by: <repo-relative-path-of-the-better-note>\`. Weaker =
+     fewer verified anchors / shallower insight. Both files stay on disk.
+Be CONSERVATIVE: when in doubt, verdict approve at low confidence. Style
+complaints are never defects.
 EOF
       ;;
     anchor)

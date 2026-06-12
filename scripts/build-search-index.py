@@ -168,6 +168,15 @@ def build_index(root: Path) -> dict[str, Any]:
     for note in iter_notes(root):
         fm, body = parse_note(note)
         rel = str(note.relative_to(root))
+        # Anti-bloat: rejected notes and superseded episodes are retired
+        # content — keeping them retrievable just produces duplicate or
+        # known-bad hits next to the note that replaced them. They stay on
+        # disk and in the UI; they leave the ranking corpus.
+        if fm.get("rejected") is True or str(fm.get("rejected", "")).strip() == "true":
+            continue
+        superseded = str(fm.get("superseded_by") or "").strip()
+        if superseded and superseded != "~":
+            continue
         title = ""
         if isinstance(fm.get("topic"), str):
             title = fm["topic"]
