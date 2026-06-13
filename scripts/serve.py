@@ -2782,6 +2782,63 @@ def create_app() -> FastAPI:
             "events": events,
         }
 
+    @app.get("/api/seams-graph")
+    def seams_graph() -> dict[str, Any]:
+        """Dependency graph (nodes + directed edges) for the tracked repos and
+        their external neighbours, derived live from REPOS + guides/seams.md.
+
+        Parses the `## A → B[, C]` seam headings. Data-driven on purpose: the
+        graph reflects whatever repos an instance tracks and whatever seams it
+        has written — adding a fork (and its seam sections) updates the graph
+        on next load, with no hand-maintained node/edge list.
+        """
+        tracked = list(REPOS)
+        tracked_set = set(tracked)
+
+        def _norm(s: str) -> str:
+            s = re.sub(r"\(.*?\)", "", s).strip()   # drop parentheticals
+            s = s.split("/")[0].strip()              # "XLA / OpenXLA" -> "XLA"
+            return s.lower().replace(" ", "-")
+
+        edges: list[list[str]] = []
+        externals: set[str] = set()
+        seen: set[tuple[str, str]] = set()
+        seams_path = GUIDES_DIR / "seams.md"
+        if seams_path.is_file():
+            for line in seams_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if not line.startswith("## ") or "→" not in line:
+                    continue
+                left, _, right = line[3:].strip().partition("→")
+                src = _norm(left)
+                if not src:
+                    continue
+                for tgt in right.split(","):
+                    dst = _norm(tgt)
+                    if not dst or dst == src or (src, dst) in seen:
+                        continue
+                    seen.add((src, dst))
+                    edges.append([src, dst])
+                    if src not in tracked_set:
+                        externals.add(src)
+                    if dst not in tracked_set:
+                        externals.add(dst)
+
+        # Hub = the most-connected tracked repo (generic — no hardcoded name).
+        degree: dict[str, int] = {}
+        for a, b in edges:
+            degree[a] = degree.get(a, 0) + 1
+            degree[b] = degree.get(b, 0) + 1
+        hub = max(tracked, key=lambda r: (degree.get(r, 0), r)) if tracked else None
+
+        nodes: list[dict[str, Any]] = [
+            {"id": r, "label": r, "kind": "tracked", "href": f"/repo/{r}/", "isHub": r == hub}
+            for r in tracked
+        ]
+        nodes += [{"id": e, "label": e, "kind": "external"} for e in sorted(externals)]
+        node_ids = {n["id"] for n in nodes}
+        edges = [[a, b] for a, b in edges if a in node_ids and b in node_ids]
+        return {"nodes": nodes, "edges": edges, "hub": hub}
+
     @app.get("/api/adjacent-repos")
     def adjacent_repos() -> dict[str, Any]:
         """Count mentions of adjacent / candidate repos across cartograph content.

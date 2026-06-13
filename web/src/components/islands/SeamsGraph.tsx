@@ -1,16 +1,19 @@
 // Interactive dependency graph for the tracked repos + their external
 // satellites. Renders with React Flow inside an Astro client island.
 //
+// DATA-DRIVEN: nodes + edges come from `/api/seams-graph` at runtime, which
+// derives them from the live tracked-repo list + guides/seams.md. The graph
+// reflects whatever repos the running instance tracks — add a fork (and its
+// seam sections) and it appears here on next load; nothing is hand-maintained.
+//
 // Visual contract:
 // - Brutalist node chrome: 2px ink border, 6px block shadow, hard rectangles,
 //   JetBrains Mono labels, no rounded corners.
-// - JAX hub node gets the cobalt accent.
-// - Tracked repos (jax/xla/orbax/tunix/tokamax) are clickable and route to
-//   `/repo/<repo>/`; external nodes are inert.
+// - The most-connected tracked repo (the hub) gets the cobalt accent.
+// - Tracked repos are clickable and route to `/repo/<repo>/`; external nodes
+//   are inert.
 // - Hovering a node highlights its outgoing edges in the accent color.
-// - All animations gated on `prefers-reduced-motion`.
-import { useMemo, useState, useCallback } from 'react';
-import { REPOS } from '~/lib/repos';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -37,7 +40,41 @@ interface NodeData {
   hoveredOutgoing?: boolean;
 }
 
-const TRACKED = new Set<string>(REPOS);
+// Shape returned by GET /api/seams-graph.
+interface GraphNode {
+  id: string;
+  label: string;
+  kind: RepoKind;
+  href?: string;
+  isHub?: boolean;
+}
+interface GraphPayload {
+  nodes: GraphNode[];
+  edges: [string, string][];
+  hub: string | null;
+}
+
+// Deterministic radial layout computed from the node list — no hand-laid
+// positions, so any repo set lays out sensibly. Hub dead-centre; other
+// tracked repos on an inner ring; external satellites on an outer ring.
+function layout(nodes: GraphNode[]): Record<string, [number, number]> {
+  const pos: Record<string, [number, number]> = {};
+  const hub = nodes.find((n) => n.isHub);
+  const innerTracked = nodes.filter((n) => n.kind === 'tracked' && !n.isHub);
+  const external = nodes.filter((n) => n.kind === 'external');
+  if (hub) pos[hub.id] = [0, 0];
+  const ring = (arr: GraphNode[], radius: number, phase: number) => {
+    const n = Math.max(1, arr.length);
+    arr.forEach((node, i) => {
+      const a = phase + (2 * Math.PI * i) / n;
+      pos[node.id] = [Math.round(radius * Math.cos(a)), Math.round(radius * Math.sin(a))];
+    });
+  };
+  ring(innerTracked, 240, -Math.PI / 2);
+  // Offset the outer ring by half a step so satellites sit between spokes.
+  ring(external, 470, -Math.PI / 2 + Math.PI / Math.max(1, external.length));
+  return pos;
+}
 
 // Custom node: brutalist rect with optional accent fill.
 function RepoNode({ data }: NodeProps<NodeData>) {
@@ -122,58 +159,44 @@ function FlowEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, data, sty
 const nodeTypes = { repo: RepoNode };
 const edgeTypes = { flow: FlowEdge };
 
-// Static layout — positions chosen by hand so the JAX hub sits dead-centre.
-const RAW_NODES: { id: string; label: string; kind: RepoKind; pos: [number, number]; href?: string; isHub?: boolean }[] = [
-  { id: 'jax', label: 'jax', kind: 'tracked', pos: [400, 220], href: '/repo/jax/', isHub: true },
-  { id: 'xla', label: 'xla', kind: 'tracked', pos: [720, 220], href: '/repo/xla/' },
-  { id: 'orbax', label: 'orbax', kind: 'tracked', pos: [400, 60], href: '/repo/orbax/' },
-  { id: 'tunix', label: 'tunix', kind: 'tracked', pos: [120, 80], href: '/repo/tunix/' },
-  { id: 'tokamax', label: 'tokamax', kind: 'tracked', pos: [120, 360], href: '/repo/tokamax/' },
-  // External satellites
-  { id: 'jaxlib', label: 'jaxlib', kind: 'external', pos: [560, 360] },
-  { id: 'triton', label: 'triton', kind: 'external', pos: [720, 360] },
-  { id: 'libtpu', label: 'libtpu', kind: 'external', pos: [720, 60] },
-  { id: 'qwix', label: 'qwix', kind: 'external', pos: [-60, 420] },
-  { id: 'flax-nnx', label: 'flax-nnx', kind: 'external', pos: [-80, 160] },
-  { id: 'optax', label: 'optax', kind: 'external', pos: [-80, 40] },
-  { id: 'tensorstore', label: 'tensorstore', kind: 'external', pos: [560, -40] },
-  { id: 'etils', label: 'etils', kind: 'external', pos: [380, -60] },
-  { id: 'vllm', label: 'vllm', kind: 'external', pos: [200, 460] },
-  { id: 'sglang-jax', label: 'sglang-jax', kind: 'external', pos: [380, 460] },
-  { id: 'transformers', label: 'hf transformers', kind: 'external', pos: [0, 460] },
-];
-
-// Directed edges: src -> dst meaning "src depends on dst".
-const RAW_EDGES: [string, string][] = [
-  ['jax', 'xla'],
-  ['jax', 'jaxlib'],
-  ['jaxlib', 'libtpu'],
-  ['jaxlib', 'triton'],
-  ['orbax', 'jax'],
-  ['orbax', 'tensorstore'],
-  ['orbax', 'etils'],
-  ['tunix', 'jax'],
-  ['tunix', 'orbax'],
-  ['tunix', 'optax'],
-  ['tunix', 'flax-nnx'],
-  ['tunix', 'qwix'],
-  ['tunix', 'vllm'],
-  ['tunix', 'sglang-jax'],
-  ['tunix', 'transformers'],
-  ['tokamax', 'jax'],
-  ['tokamax', 'xla'],
-  ['tokamax', 'qwix'],
-];
+type Fetched =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; data: GraphPayload };
 
 export default function SeamsGraph() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [state, setState] = useState<Fetched>({ kind: 'loading' });
 
-  const nodes: Node<NodeData>[] = useMemo(
-    () =>
-      RAW_NODES.map((n) => ({
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/seams-graph')
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d: GraphPayload) => {
+        if (!cancelled) setState({ kind: 'ready', data: d });
+      })
+      .catch((e) => {
+        if (!cancelled) setState({ kind: 'error', message: String(e) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const graph = state.kind === 'ready' ? state.data : null;
+  const positions = useMemo(() => (graph ? layout(graph.nodes) : {}), [graph]);
+
+  const nodes: Node<NodeData>[] = useMemo(() => {
+    if (!graph) return [];
+    return graph.nodes.map((n) => {
+      const [x, y] = positions[n.id] ?? [0, 0];
+      return {
         id: n.id,
         type: 'repo',
-        position: { x: n.pos[0], y: n.pos[1] },
+        position: { x, y },
         data: {
           label: n.label,
           kind: n.kind,
@@ -184,33 +207,67 @@ export default function SeamsGraph() {
         draggable: false,
         connectable: false,
         selectable: false,
-      })),
-    [hoveredId]
+      };
+    });
+  }, [graph, positions, hoveredId]);
+
+  const trackedIds = useMemo(
+    () => new Set((graph?.nodes ?? []).filter((n) => n.kind === 'tracked').map((n) => n.id)),
+    [graph]
   );
 
-  const edges: Edge[] = useMemo(
-    () =>
-      RAW_EDGES.map(([src, dst]) => ({
-        id: `${src}->${dst}`,
-        source: src,
-        target: dst,
-        type: 'flow',
-        data: { highlighted: hoveredId === src },
-        markerEnd: {
-          type: 'arrowclosed' as const,
-          color: hoveredId === src ? 'var(--accent)' : 'var(--border)',
-          width: 14,
-          height: 14,
-        },
-      })),
-    [hoveredId]
-  );
+  const edges: Edge[] = useMemo(() => {
+    if (!graph) return [];
+    return graph.edges.map(([src, dst]) => ({
+      id: `${src}->${dst}`,
+      source: src,
+      target: dst,
+      type: 'flow',
+      data: { highlighted: hoveredId === src },
+      markerEnd: {
+        type: 'arrowclosed' as const,
+        color: hoveredId === src ? 'var(--accent)' : 'var(--border)',
+        width: 14,
+        height: 14,
+      },
+    }));
+  }, [graph, hoveredId]);
 
   const onNodeMouseEnter = useCallback((_: unknown, n: Node) => setHoveredId(n.id), []);
   const onNodeMouseLeave = useCallback(() => setHoveredId(null), []);
-  const onNodeClick = useCallback((_: unknown, n: Node) => {
-    if (TRACKED.has(n.id)) window.location.href = `/repo/${n.id}/`;
-  }, []);
+  const onNodeClick = useCallback(
+    (_: unknown, n: Node) => {
+      if (trackedIds.has(n.id)) window.location.href = `/repo/${n.id}/`;
+    },
+    [trackedIds]
+  );
+
+  if (state.kind !== 'ready') {
+    return (
+      <div
+        className="brutal-card"
+        style={{ height: 540, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div className="font-mono text-sm text-muted">
+          {state.kind === 'loading'
+            ? 'loading seam graph…'
+            : `seam graph unavailable (${state.message}) — is the server running?`}
+        </div>
+      </div>
+    );
+  }
+  if (nodes.length === 0) {
+    return (
+      <div
+        className="brutal-card"
+        style={{ height: 540, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div className="font-mono text-sm text-muted">
+          no tracked repos yet — add a fork with <code>scripts/fork-setup.sh</code>.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
