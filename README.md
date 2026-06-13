@@ -142,30 +142,30 @@ still go through the slash commands.
 across every layer. Call before grepping.
 
 ```jsonc
-// call:    cartograph_search(query="async checkpoint coordination", repo="orbax", k=5)
+// call:    cartograph_search(query="async checkpoint coordination", repo="acme", k=5)
 // returns:
 {
   "query": "async checkpoint coordination",
   "hits": [
     {
-      "path": "guides/orbax/topics/async-checkpoint-flow.md",
+      "path": "guides/acme/topics/async-checkpoint-flow.md",
       "title": "Async checkpoint flow",
       "layer": "topic",
-      "repo": "orbax",
+      "repo": "acme",
       "score": 9.87
     },
     {
       "path": "episodes/2026-04/2026-04-15-checkpoint-handoff.md",
       "title": "Coordinator handoff edge case",
       "layer": "episode",
-      "repo": "orbax",
+      "repo": "acme",
       "score": 6.32
     },
     {
-      "path": "research/orbax/distributed-save-vs-tf-saver.md",
+      "path": "research/acme/distributed-save-vs-tf-saver.md",
       "title": "Distributed save vs tf.train.Saver",
       "layer": "research",
-      "repo": "orbax",
+      "repo": "acme",
       "score": 4.18
     }
   ],
@@ -184,10 +184,10 @@ to open next.
 {
   "hits": [
     {
-      "path": "orbax/_src/checkpointers/pytree_checkpoint.py",
+      "path": "acme/_src/checkpointers/pytree_checkpoint.py",
       "entries": [
         {
-          "note": "guides/orbax/topics/pytree-restore.md",
+          "note": "guides/acme/topics/pytree-restore.md",
           "layer": "topic",
           "anchors": [42, 78, 156],
           "sources": ["bedrock", "topic"]
@@ -210,24 +210,24 @@ trusting any topic note that might be stale, before extending a topic,
 or before recommending code that touches a cited line.
 
 ```jsonc
-// call:    cartograph_drift(repo="orbax")
+// call:    cartograph_drift(repo="acme")
 // returns:
 {
-  "repo": "orbax",
-  "repo_report": "# orbax drift report\n\nbedrock backfilled_from_sha=887829f4; upstream=a1b2c3d4 (37 commits ahead)\n\n## changed files cited in bedrock\n- checkpointers/pytree_checkpoint.py (12 commits)\n- ...",
+  "repo": "acme",
+  "repo_report": "# acme drift report\n\nbedrock backfilled_from_sha=887829f4; upstream=a1b2c3d4 (37 commits ahead)\n\n## changed files cited in bedrock\n- checkpointers/pytree_checkpoint.py (12 commits)\n- ...",
   "open_topic_drifts": [
-    ".drift-reports/topics/orbax/pytree-restore.md",
-    ".drift-reports/topics/orbax/async-checkpoint-flow.md"
+    ".drift-reports/topics/acme/pytree-restore.md",
+    ".drift-reports/topics/acme/async-checkpoint-flow.md"
   ]
 }
 
-// call:    cartograph_drift(repo="orbax", anchor="checkpointers/pytree_checkpoint.py:78")
+// call:    cartograph_drift(repo="acme", anchor="checkpointers/pytree_checkpoint.py:78")
 // returns: (same as above, plus:)
 {
   // ...
   "anchor": "checkpointers/pytree_checkpoint.py:78",
   "topics_citing_anchor": [
-    ".drift-reports/topics/orbax/pytree-restore.md"
+    ".drift-reports/topics/acme/pytree-restore.md"
   ]
 }
 ```

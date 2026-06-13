@@ -10,11 +10,9 @@ import Card from '~/components/Card.astro';
       Cartograph is the notebook that <span class="text-accent">carries understanding forward</span>.
     </h1>
     <p class="text-lg text-muted leading-relaxed">
-      Eight large open-source codebases — <code>jax</code>, <code>xla</code>,
-      <code>orbax</code>, <code>tunix</code>, <code>tokamax</code>,
-      <code>sglang</code>, <code>maxtext</code>, <code>qwix</code> — and one
-      solo developer working across them through Claude. The bottleneck isn't file
-      access; Claude already has fast tools. The bottleneck is that
+      Cartograph sits next to the large codebases you navigate through Claude
+      and makes the model fast at finding its way around them. The bottleneck
+      isn't file access; Claude already has fast tools. The bottleneck is that
       <em>nothing persists between sessions</em>. Every Monday's exploration
       vanishes by Friday. Every "I figured this out" insight has to be
       re-discovered.
@@ -182,9 +180,9 @@ import Card from '~/components/Card.astro';
         </ul>
         <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">An episode contributes to <em>every</em> tag it carries</div>
         <p class="text-sm text-muted">
-          An episode tagged <code>tags: [orbax, jax]</code> counts toward both
-          buckets. If <code>orbax</code> hits 3 first, that fires; <code>jax</code>
-          might or might not depending on how many other <code>jax</code>-tagged
+          An episode tagged <code>tags: [acme, parsing]</code> counts toward both
+          buckets. If <code>acme</code> hits 3 first, that fires; <code>parsing</code>
+          might or might not depending on how many other <code>parsing</code>-tagged
           episodes share the bucket.
         </p>
         <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">When it fires</div>
@@ -237,22 +235,22 @@ import Card from '~/components/Card.astro';
 
     <div class="mt-6 max-w-3xl">
       <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Worked example</div>
-      <p class="text-sm text-muted mb-2">Say you finish three orbax sessions this week. Each writes an episode:</p>
+      <p class="text-sm text-muted mb-2">Say you finish three sessions this week in a repo you track (call it <code>acme</code>). Each writes an episode:</p>
       <ul class="font-mono text-xs text-muted list-none space-y-1 mb-3 pl-3 border-l-2 border-[var(--border-soft)]">
-        <li>episodes/2026-05/2026-05-25-153140-cartograph.md · repo: orbax · tags: [orbax, layout-classes]</li>
-        <li>episodes/2026-05/2026-05-25-153330-cartograph.md · repo: orbax · tags: [orbax, partial-load]</li>
-        <li>episodes/2026-05/2026-05-25-173127-cartograph.md · repo: orbax · tags: [orbax, drift-resolution]</li>
+        <li>episodes/2026-05/2026-05-25-153140-cartograph.md · repo: acme · tags: [acme, layout-classes]</li>
+        <li>episodes/2026-05/2026-05-25-153330-cartograph.md · repo: acme · tags: [acme, partial-load]</li>
+        <li>episodes/2026-05/2026-05-25-173127-cartograph.md · repo: acme · tags: [acme, drift-resolution]</li>
       </ul>
       <p class="text-sm text-muted mb-2">
-        Three episodes share the tag <code>orbax</code>. Each unique secondary tag
+        Three episodes share the tag <code>acme</code>. Each unique secondary tag
         (<code>layout-classes</code>, <code>partial-load</code>, <code>drift-resolution</code>)
         has count=1 — below threshold.
       </p>
       <ul class="text-sm text-muted list-disc pl-5 space-y-1 mb-3">
-        <li><strong>Next SessionStart:</strong> <code>auto-promote.sh</code> finds the <code>(orbax, orbax)</code> bucket at count 3 → fires <code>promote-tag.sh orbax</code> in background.</li>
-        <li><strong>~30–90s later:</strong> <code>guides/orbax/topics/orbax.md</code> exists with <code>auto_promoted: true</code>. Each source episode has <code>distilled_into: guides/orbax/topics/orbax.md</code>.</li>
+        <li><strong>Next SessionStart:</strong> <code>auto-promote.sh</code> finds the <code>(acme, acme)</code> bucket at count 3 → fires <code>promote-tag.sh acme</code> in background.</li>
+        <li><strong>~30–90s later:</strong> <code>guides/acme/topics/acme.md</code> exists with <code>auto_promoted: true</code>. Each source episode has <code>distilled_into: guides/acme/topics/acme.md</code>.</li>
         <li><strong>Same SessionStart:</strong> the new topic file isn't seen by Cascade 2 yet (scan happened before the file existed) — fold waits one cycle.</li>
-        <li><strong>Following SessionStart:</strong> Cascade 2 finds the new topic, fires <code>fold-topic-to-bedrock.sh orbax orbax</code> → claude weaves the topic's content into <code>guides/orbax/overview.md</code>, stamps <code>folded_into_bedrock: guides/orbax/overview.md</code> on the topic.</li>
+        <li><strong>Following SessionStart:</strong> Cascade 2 finds the new topic, fires <code>fold-topic-to-bedrock.sh acme acme</code> → claude weaves the topic's content into <code>guides/acme/overview.md</code>, stamps <code>folded_into_bedrock: guides/acme/overview.md</code> on the topic.</li>
         <li><strong>To halt at any point:</strong> set <code>rejected: true</code> on the episode (blocks promotion), or on the topic (blocks fold), or on the auto-drafted topic (blocks fold + flags for cleanup).</li>
       </ul>
     </div>
@@ -290,7 +288,7 @@ import Card from '~/components/Card.astro';
         <div class="font-mono text-xs font-bold mb-1">Eval harness — golden questions</div>
         <p class="text-sm text-muted">
           <code>scripts/eval/run-eval.sh</code> holds 27 architecture questions
-          across the eight repos, each graded by regex groups. Every question
+          across the repos it tracks, each graded by regex groups. Every question
           runs as a headless session twice — orientation on vs
           <code>CARTOGRAPH_INJECT_DISABLE=1</code> (which disables every
           injection surface) — and the per-arm deltas in score, turns, and
@@ -365,14 +363,14 @@ import Card from '~/components/Card.astro';
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/prs/" class="font-bold text-accent hover:underline">PRs <code class="text-xs">/prs/</code></a>
-        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the eight tracked upstreams. State, mergeable, review decision, age.</p>
+        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across your tracked upstreams. State, mergeable, review decision, age.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/repo/" class="font-bold text-accent hover:underline">Repos <code class="text-xs">/repo/</code></a>
         <p class="text-sm text-muted mt-1">Pick a fork to dive into. Each repo has its own page with bedrock, topics, designs, research, papers, learn, episodes, drift, and stack.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
-        <a href="/repo/orbax/stack/" class="font-bold text-accent hover:underline">Stack tracker <code class="text-xs">/repo/&lt;r&gt;/stack/</code></a>
+        <a href="/repo/" class="font-bold text-accent hover:underline">Stack tracker <code class="text-xs">/repo/&lt;r&gt;/stack/</code></a>
         <p class="text-sm text-muted mt-1">Live tree of every local branch with PR state and cascade hints. Backed by ancestry walks; git-spice integration if installed.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
@@ -389,7 +387,7 @@ import Card from '~/components/Card.astro';
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/seams/" class="font-bold text-accent hover:underline">Seams <code class="text-xs">/seams/</code></a>
-        <p class="text-sm text-muted mt-1">Every cross-repo edge — jax↔xla, jax↔orbax, jax↔tunix — with the file paths and concepts that cross.</p>
+        <p class="text-sm text-muted mt-1">Every cross-repo edge — which file on one side maps to which entry point on the other, and the concept that crosses.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/promotions/" class="font-bold text-accent hover:underline">Promotions <code class="text-xs">/promotions/</code></a>
@@ -472,10 +470,10 @@ import Card from '~/components/Card.astro';
       <div>
         <div class="font-bold mb-1">Scenario A — "Why is my checkpoint save hanging on multi-host?"</div>
         <p class="text-sm text-muted">
-          User opens Claude in <code>workspace/orbax/</code>. The
+          User opens Claude in <code>workspace/acme/</code>. The
           <code>UserPromptSubmit</code> hook fires: bedrock + topics injected;
-          BM25 surfaces <code>guides/orbax/topics/multi-host-coordination.md</code>
-          and <code>guides/orbax/topics/async-checkpoint-flow.md</code> (scores
+          BM25 surfaces <code>guides/acme/topics/multi-host-coordination.md</code>
+          and <code>guides/acme/topics/async-checkpoint-flow.md</code> (scores
           13.5 / 8.6); path-token lookup finds <code>async_checkpointer.py</code>
           notes. Agent reads the topic notes <em>before</em> opening upstream
           code. If a claim contradicts what the code now shows, <code>/revise
@@ -497,7 +495,7 @@ import Card from '~/components/Card.astro';
           Then <code>/stack-submit</code> force-pushes every updated branch
           with <code>--force-with-lease</code>. Throughout, the
           <a href="/prs/" class="text-accent hover:underline">/prs/</a> page
-          shows live status across all eight upstreams.
+          shows live status across all your tracked upstreams.
         </p>
       </div>
 
@@ -506,8 +504,8 @@ import Card from '~/components/Card.astro';
         <p class="text-sm text-muted">
           User opens cartograph cold. Home shows: 3 auto-drafted episodes
           awaiting review (the chassis caught them at session-end), 1 per-repo
-          drift report opened on jax (4 commits ahead), 2 topic-level drifts
-          on orbax (cited code refactored). User clicks
+          drift report opened on <code>acme</code> (4 commits ahead), 2 topic-level
+          drifts on another repo (cited code refactored). User clicks
           <a href="/console/review/" class="text-accent hover:underline">/console/review/</a>
           to triage the auto-drafted episodes — bless the good ones, reject
           the noisy one with a note (which triggers
@@ -520,9 +518,9 @@ import Card from '~/components/Card.astro';
       <div>
         <div class="font-bold mb-1">Scenario D — Reading a paper that informs a design</div>
         <p class="text-sm text-muted">
-          Agent in <code>workspace/orbax/</code> consults a safetensors paper
+          Agent in <code>workspace/acme/</code> consults a relevant paper
           via WebFetch. Stop hook detects the external lookup and auto-drafts a
-          <code>papers/orbax/&lt;slug&gt;/notes.md</code>. The note lands with
+          <code>papers/acme/&lt;slug&gt;/notes.md</code>. The note lands with
           <code>auto_drafted: true</code> and shows up on
           <a href="/console/review/" class="text-accent hover:underline">Review</a>
           alongside auto-drafted episodes. User reviews, blesses, and the paper

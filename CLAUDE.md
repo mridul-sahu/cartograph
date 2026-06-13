@@ -94,8 +94,8 @@ re-run it any time identity feels drifted.
 - **To find code**: `Glob` and `Grep` directly.
 - **To understand how code behaves**: read the file. If a topic note
   disagrees with the code, see §4 (revision).
-- **To run something** (see a jaxpr, exercise a function, etc.):
-  `Bash`. Cartograph doesn't wrap these.
+- **To run something** (exercise a function, inspect an intermediate
+  representation, etc.): `Bash`. Cartograph doesn't wrap these.
 - **To find references precisely**: run the project's LSP via Bash
   (`pyright`, `pylsp`, `clangd`), or fall back to `Grep`.
 
@@ -229,9 +229,8 @@ hook surfaces them via `scripts/digest.sh` and suggests `/promote <tag>`.
 Cartograph doesn't have a separate "edges" table. Cross-file or
 cross-repo relationships go inline in the relevant topic note:
 
-> See `guides/xla/topics/hlo-passes.md` for the lowering details, and
-> `episodes/2026-04/2026-04-15-pjit-named-axes.md` for the named-axis
-> edge case.
+> See `guides/<repo>/topics/<subsystem>.md` for the mechanism, and
+> `episodes/YYYY-MM/<slug>.md` for the edge case that motivated it.
 
 Cross-repo seams specifically go in `guides/seams.md` via `/seam`.
 
