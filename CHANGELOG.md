@@ -51,6 +51,19 @@ publish time.)
   `scripts/doctor.sh` gained a report-only supervision check (OK / drift /
   down), and SessionStart warns the error feed if the nightly maintenance
   pass goes stale (>36h).
+- **Data-driven seam graph**: new `GET /api/seams-graph` derives the graph
+  from the live tracked-repo list + `guides/seams.md`; the `/seams/`
+  visualization fetches it and lays out a deterministic radial graph (hub =
+  most-connected repo). It auto-updates as forks are added/removed — no
+  hand-maintained node list.
+
+### Changed
+
+- The published presentation reads as a general-purpose framework: the
+  about page, README, operational docs, and all slash-command help no
+  longer enumerate specific tracked repos (use `<repo>` / "a tracked
+  fork"). The seam graph and adjacency view are data-driven, so a forked
+  instance shows its own repos rather than this one's.
 
 ---
 
