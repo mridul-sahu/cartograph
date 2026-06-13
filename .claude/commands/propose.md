@@ -17,12 +17,12 @@ proposal that lists features without a falsifiable investment case has failed.
 
 Parse `$ARGUMENTS`:
 - **First token** — `<repo>`: the repo to propose for
-  (`jax`/`xla`/`orbax`/`tunix`/`tokamax`/`sglang`), **or** the literal `new` to
+  (any tracked repo), **or** the literal `new` to
   hunt for something worth a brand-new repo. (Even with a repo given, Phase 5
   may still conclude a new repo is the right home.)
 - **Second token** — `<slug>`: kebab-case for the proposal file.
-- **Remainder** — the theme / seed ("make Tunix the go-to async-RL JAX
-  framework", "what should we build next for JAX post-training", …).
+- **Remainder** — the theme / seed ("make <repo> the go-to library for a capability the
+  ecosystem is missing", "what should we build next for <repo>", …).
 
 Validate: for a repo, `guides/<repo>/` must exist. For `new`, skip that check.
 Today's date:
@@ -47,7 +47,7 @@ Report in one line what evidence already existed.
 Three grounded inputs, each cited:
 - **Gaps / demand** — what's missing or wanted (from the gap-scan notes).
 - **Techniques** — what's now possible (from papers + topic notes).
-- **Our strengths** — what we can uniquely do (JAX/TPU-native, integration with
+- **Our strengths** — what we can uniquely do (your stack's native strengths, integration with
   the rest of the stack, existing subsystems we'd build on).
 If the base is thin, widen it before proposing — an ungrounded proposal is the
 main failure mode of this skill.
@@ -59,7 +59,7 @@ adversarially verified:
 - **Adoption signals** — what frameworks people are switching to, GitHub
   momentum, what frontier labs publish/open-source, what's getting attention.
 - **Direction of travel** — the structural shifts (e.g. RL post-training going
-  mainstream, agentic RL rising, inference-time scaling, JAX RL tooling thin).
+  mainstream, agentic RL rising, inference-time scaling, your ecosystem's tooling thin in places).
 - **Tailwinds vs headwinds** — trends that make a proposal timely vs ones that
   work against it.
 
@@ -86,7 +86,7 @@ across multiple players). That re-framing is the skill working, not scope creep.
 Score each candidate on explicit, falsifiable criteria:
 - **Demand** — who wants it, how badly, what's the evidence.
 - **Trend tailwind** — which durable trend it rides; the "why now" timing case.
-- **Differentiation / moat** — why ours gets chosen (JAX/TPU-native, integration,
+- **Differentiation / moat** — why ours gets chosen (your stack's native strengths, integration,
   performance, the thing only we can do).
 - **Feasibility** — can we build it given our capabilities and gaps; rough effort;
   dependencies; the hardest unsolved part.
@@ -94,8 +94,8 @@ Score each candidate on explicit, falsifiable criteria:
 - **Adoption path** — how people discover it and get to first value.
 
 Then **rank**, and state the **assumptions that, if false, kill the thesis**
-(e.g. "assumes JAX-side RL demand keeps growing; if the ecosystem consolidates
-on PyTorch-only, the moat evaporates"). An investment case you can't falsify is
+(e.g. "assumes demand for this capability keeps growing; if the ecosystem
+consolidates on one incumbent, the moat evaporates"). An investment case you can't falsify is
 hype, not analysis.
 
 **Name the single load-bearing assumption and design the first step to test
@@ -140,7 +140,7 @@ Write `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/proposals/<repo|_new>/<slug>.md`
   Firewall-safe citation: reference internal analyses by their **note name/slug**
   (like a topic-note cross-link, e.g. "the rl-developments-vs-frontier gap
   analysis"), cite upstream code by its **public repo-relative path**
-  (`tunix/rl/...` is public), external sources by URL — **never** a private
+  (`<repo>/...` upstream code is public), external sources by URL — **never** a private
   `~/`/`cartograph/` absolute path.
 - **Next action** — driven by the proposal's `status` (the *Lifecycle* table in
   `proposals/README.md`). A freshly written proposal is `gap-analysis` → its next
@@ -151,7 +151,7 @@ Write `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/proposals/<repo|_new>/<slug>.md`
   **Never point a non-final proposal at `designs/` or `/stack-new`** — the
   proposal docx and design docx are earned only after a human marks it `final`,
   and an agent never self-promotes past `deep-dive`. **Write any slash command
-  inside a single backtick span** (e.g. `` `/analyze-paper tunix foo --into tunix
+  inside a single backtick span** (e.g. `` `/analyze-paper <repo> foo --into <repo>
   <url>` ``) — the proposals UI renders each backticked `/command` as a copy
   button and each URL as a link.
 

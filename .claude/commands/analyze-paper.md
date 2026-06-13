@@ -14,12 +14,12 @@ failed.
 Parse `$ARGUMENTS`:
 
 - **First token** — `<repo>`: the bookshelf the *paper* belongs to (its
-  subject-matter home, e.g. `sglang` for a RadixAttention paper).
+  subject-matter home, e.g. the repo a paper's technique most relates to).
 - **`--into <target>`** (optional) — the library we intend to *implement
-  into* (e.g. `tunix`). If omitted, the target is the same as `<repo>`.
+  into* (e.g. a different tracked repo). If omitted, the target is the same as `<repo>`.
   The paper note is filed under `<repo>`; the implementable topic note is
   filed under `<target>`. These differ for ported concepts
-  (SGLang → Tunix, an XLA paper → a JAX partitioning change, …).
+  (a serving paper → your trainer, a compiler paper → a partitioning change, …).
 - **Second token** — `<slug>`: kebab-case identifier for the paper
   (e.g. `radix-attention`).
 - **Remainder** — the paper URL, arXiv id, or title, plus an optional
@@ -111,7 +111,7 @@ This is the output that justifies the whole run. Write or revise
 `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/guides/<target>/topics/<concept-slug>.md`.
 
 The `<concept-slug>` names the concept as we'd build it, not the paper
-(`prefix-sharing-kv-cache`, not `sglang-paper`). Frontmatter:
+(`prefix-sharing-kv-cache`, not `some-paper`). Frontmatter:
 
 ```yaml
 ---

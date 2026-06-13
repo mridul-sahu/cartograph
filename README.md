@@ -106,7 +106,7 @@ Ordered from "carefully shaped" to "loose drafts":
 | **Topic notes** | `guides/<repo>/topics/<tag>.md` | Distilled understanding of a subsystem, gotcha, or pattern | Promoted from ≥3 same-tag episodes. Revised in place when code disagrees |
 | **Episodes** | `episodes/YYYY-MM/*.md` | Per-session worknotes: task, files touched, insight | Auto-drafted by the Stop hook. Reviewed via the inbox |
 | **Research / Papers** | `research/<repo>/*.md`, `papers/<repo>/<slug>/notes.md` | External material — blog posts, RFCs, papers, comparisons | Manual via `/research` / `/paper`; auto-drafted when a session used WebFetch / WebSearch |
-| **Seams** | `guides/seams.md` | Cross-repo edges ("JAX lowers via XLA's `lower_jaxpr_to_module`") | Appended via `/seam` |
+| **Seams** | `guides/seams.md` | Cross-repo edges ("one repo lowers into another via a named entry point") | Appended via `/seam` |
 | **Proposals** | `proposals/<repo>/<slug>.md` | Investment-cased build plans — what to build next, grounded in gap research + papers + ecosystem trends | A phased lifecycle (`gap-analysis → deep-dive → final → proposal-docx → design → implement`); nest as an **umbrella + sub-proposals**; formalized into a `.docx` via `/proposal-final-draft` |
 
 Plus a `learn/` tree for **walkthroughs**, **ramp-ups**, and **drafts** —
@@ -453,8 +453,8 @@ chain:
 
 Proposals move through an explicit **lifecycle** — `gap-analysis → deep-dive →
 final → proposal-docx → design-docx → implementing` — and form a **tree**: an
-*umbrella* proposal (a north-star like "Tunix as a frontier agentic-capability
-stack") nests **sub-proposals** you might or might not do, each carrying its own
+*umbrella* proposal (a north-star like "make `<repo>` the go-to library for
+some capability") nests **sub-proposals** you might or might not do, each carrying its own
 status badge so the tree shows commitment at a glance.
 
 ![the proposals tree — umbrellas with nested sub-proposals](screenshots/proposals.png)

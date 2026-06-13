@@ -15,7 +15,7 @@ Use this when:
 Steps:
 
 1. Parse `$ARGUMENTS` as `<repo> <slug>`. Validate repo in
-   jax/xla/orbax/tunix/tokamax.
+   any tracked repo.
 
 2. Path: `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/papers/<repo>/<slug>/notes.md`.
 

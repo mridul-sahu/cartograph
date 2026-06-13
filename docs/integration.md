@@ -122,8 +122,8 @@ Aggregated stats appear on `/status/` next to the lint panel.
 ## Adjacent-repo detection
 
 `/api/adjacent-repos` scans `guides/`, `episodes/`, `research/`, `papers/`
-for substring matches of `flax / optax / qwix / sglang-jax / vllm /
-jaxlib / shardy / stablehlo / treescope`. Candidates over the threshold
+for substring matches of a configurable watch-list of common adjacent
+libraries. Candidates over the threshold
 (≥5 mentions across ≥2 files) get surfaced on `/seams/` with a "set up
 in cartograph" panel — 4-step install: `fork-setup.sh` → REPOS edit →
 `backfill-bedrock.sh` → restart. Once a candidate is added as a tracked

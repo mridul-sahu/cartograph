@@ -32,8 +32,8 @@ climbing without `last_revised` ever updating, that's the smell of
 ## Arguments
 
 Parse `$ARGUMENTS` as:
-- First word: the repo (`jax` / `xla` / `orbax` / `tunix` / `tokamax`)
-- Second word: a kebab-case slug (e.g., `safetensor-vs-orbax-v1`)
+- First word: the repo (any tracked fork)
+- Second word: a kebab-case slug (e.g., `format-vs-baseline`)
 - Rest: the seed body or context for the note
 
 ## Write / update flow

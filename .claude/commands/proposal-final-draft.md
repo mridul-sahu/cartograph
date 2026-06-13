@@ -27,7 +27,7 @@ This is the load-bearing contract. Do not reorder, drop, or rename sections.
    matters. The elevator pitch + the one-paragraph case. A reader who stops here
    should know what we want to build and why it's worth it.
 2. **Background** — *deep, detailed, grounded.* What is **already implemented in
-   Tunix today**, in real detail (subsystems, the actual code seams, what works
+   the target repo today**, in real detail (subsystems, the actual code seams, what works
    and what's missing), and **why our proposed work helps** given that reality.
    This is where we prove we understand the system we're extending. Ground every
    claim in the topic notes + the upstream code (cite repo-relative paths). Be
@@ -39,7 +39,7 @@ This is the load-bearing contract. Do not reorder, drop, or rename sections.
    SkyRL, …) and cite real papers. Distinguish a durable shift from hype.
    - **3a. Impact (sub-section)** — the **impact this class of infra has already
      had on the ecosystem** (the capability/quality/cost wins others got from
-     it), and therefore **why JAX/TPU should have it too**. Quantify where the
+     it), and therefore **why your stack should have it too**. Quantify where the
      literature does (the deltas, the adoption, the model results).
 4. **High-Level Design (HLD)** — *roughly how we build it.* The architecture,
    data flow, the pillars/components, the public surfaces, the MVP and the
@@ -65,7 +65,7 @@ Read the proposal(s) you're formalizing + everything grounding them:
 
 The bar is "well researched." Where the existing notes are thin for a section:
 - **Background:** widen into the topic notes + read the actual code. A reviewer
-  must believe we know exactly what Tunix does today.
+  must believe we know exactly what the target repo does today.
 - **Ecosystem + Impact:** WebSearch/WebFetch primary sources (papers, framework
   docs, model cards, eng blogs). Adversarially verify load-bearing claims and the
   quantified impact numbers before stating them. Prefer 2023–2026 primary work.

@@ -11,15 +11,15 @@ ranked list of capabilities worth building, each tied to a concrete entry point
 in our code.
 
 Use it for questions like:
-- "recent RL developments frontier labs use that Tunix lacks"
-- "capabilities PyTorch post-training frameworks have that JAX should build"
-- "checkpoint/serialization features other ecosystems have that Orbax doesn't"
+- "recent developments frontier labs use that <repo> lacks"
+- "capabilities competing ecosystems have that your stack should build"
+- "features other ecosystems have that <repo> doesn't"
 
 ## Arguments
 
 Parse `$ARGUMENTS`:
 - **First token** — `<repo>`: the lib we're measuring against
-  (`jax`/`xla`/`orbax`/`tunix`/`tokamax`/`sglang`). Validate a
+  (any tracked repo). Validate a
   `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/guides/<repo>/` dir exists; if
   not, stop and say `just add-repo <org>/<repo>` first.
 - **Second token** — `<slug>`: kebab-case for the research note
@@ -129,9 +129,9 @@ rule of the whole skill — the POC flipped *two* cells on a re-read:
 So: open the file and read the implementation before writing any cell. Never
 classify from a grep hit (or miss) alone.
 
-Be ruthless about false negatives. Example: Tunix already ships agentic RL,
-truncated importance-sampling correction, GRPO/DPO/PPO + DAPO/Dr.GRPO/GSPO, and
-an SGLang-JAX rollout backend — none of those are gaps. Read before you claim.
+Be ruthless about false negatives. Example: a repo may already ship a capability you'd assume is missing —
+an algorithm family, a correction term, an integration backend — none of
+those are gaps. Read before you claim.
 
 ## Phase 4 — Gap matrix + prioritization
 
@@ -195,7 +195,7 @@ folds.
 - Episode (`episodes/<YYYY-MM>/<today>-<slug>.md`, standard frontmatter incl.
   `auto_drafted: false`, `reviewed_by_human: ~`, `rejected: false`): the scan,
   the top 3 opportunities, and the single highest-leverage next step.
-- If the comparison crosses ecosystems (e.g. PyTorch → JAX), record the edge in
+- If the comparison crosses ecosystems (e.g. another framework → yours), record the edge in
   `guides/seams.md` (`/seam` discipline).
 
 ## Phase 7 — Report

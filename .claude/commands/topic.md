@@ -14,7 +14,7 @@ Use this when:
 Steps:
 
 1. Parse `$ARGUMENTS` as `<repo> <slug>` (space-separated). Validate:
-   - repo is one of jax/xla/orbax/tunix/tokamax
+   - repo is a tracked workspace/ fork
    - slug is `[a-z0-9][a-z0-9-]*`
 
 2. Today's date:
