@@ -21,6 +21,13 @@ PORT="${CARTOGRAPH_PORT:-47777}"
 PY="${CARTOGRAPH_PYTHON:-python3}"
 LOG="${TMPDIR:-/tmp}/cartograph-serve.log"
 
+# Supervision-aware control. When the launchd agent is installed, start/stop/
+# restart route through launchd so this script never spawns a detached server
+# that competes with the supervisor for the port. --foreground is exempt: it
+# IS launchd's entrypoint (routing it through launchd would recurse).
+# shellcheck source=lib/serve-control.sh
+source "$CARTOGRAPH_ROOT/scripts/lib/serve-control.sh"
+
 listeners() {
   lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null || true
 }
@@ -62,9 +69,28 @@ start() {
 }
 
 case "${1:-}" in
-  --stop)             stop ;;
-  --restart)          stop; start ;;
+  --stop)
+    if cg_launchd_managed; then
+      echo "launchd supervises this server (KeepAlive) — a plain stop would just respawn."
+      echo "  to stop for real: bash scripts/setup-launchd.sh --uninstall"
+      echo "  to restart:       $0 --restart"
+      exit 0
+    fi
+    stop ;;
+  --restart)
+    if cg_serve_restart; then
+      echo "restarted via launchd ($CG_SERVE_LABEL)."
+      exit 0
+    fi
+    stop; start ;;
   --foreground|--fg)  cd "$CARTOGRAPH_ROOT" || exit 1; exec "$PY" scripts/serve.py ;;
-  ""|--start|--detach) start ;;
+  ""|--start|--detach)
+    if cg_launchd_managed; then
+      # Don't double-spawn under the supervisor: heal repairs drift, else no-op.
+      cg_serve_heal || true
+      echo "launchd supervises this server — ensured up via $CG_SERVE_LABEL."
+      exit 0
+    fi
+    start ;;
   *) echo "usage: $0 [--start|--stop|--restart|--foreground]" >&2; exit 2 ;;
 esac

@@ -540,6 +540,14 @@ for the night: the server's own drift loop resolves open reports on an
 interval throughout the day, so nightly maintenance is the backstop,
 not the only path.
 
+Supervision itself is drift-proof. Every start/restart routes through
+launchd when the agent is installed (`scripts/lib/serve-control.sh`), so
+no detached process can win the listen port and silently lock the
+supervisor out. A self-healer runs at SessionStart and in maintenance: if
+an orphan ever holds the port — or the server is simply down — it clears
+the holder, re-binds launchd, and records the repair to the error feed.
+`scripts/doctor.sh` reports supervision state on demand.
+
 ---
 
 ## Setup

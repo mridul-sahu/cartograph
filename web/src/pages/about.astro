@@ -10,10 +10,10 @@ import Card from '~/components/Card.astro';
       Cartograph is the notebook that <span class="text-accent">carries understanding forward</span>.
     </h1>
     <p class="text-lg text-muted leading-relaxed">
-      Six large open-source codebases — <code>jax</code>, <code>xla</code>,
+      Eight large open-source codebases — <code>jax</code>, <code>xla</code>,
       <code>orbax</code>, <code>tunix</code>, <code>tokamax</code>,
-      <code>sglang</code> — and one solo developer working across them
-      through Claude. The bottleneck isn't file
+      <code>sglang</code>, <code>maxtext</code>, <code>qwix</code> — and one
+      solo developer working across them through Claude. The bottleneck isn't file
       access; Claude already has fast tools. The bottleneck is that
       <em>nothing persists between sessions</em>. Every Monday's exploration
       vanishes by Friday. Every "I figured this out" insight has to be
@@ -290,7 +290,7 @@ import Card from '~/components/Card.astro';
         <div class="font-mono text-xs font-bold mb-1">Eval harness — golden questions</div>
         <p class="text-sm text-muted">
           <code>scripts/eval/run-eval.sh</code> holds 27 architecture questions
-          across the six repos, each graded by regex groups. Every question
+          across the eight repos, each graded by regex groups. Every question
           runs as a headless session twice — orientation on vs
           <code>CARTOGRAPH_INJECT_DISABLE=1</code> (which disables every
           injection surface) — and the per-arm deltas in score, turns, and
@@ -344,8 +344,12 @@ import Card from '~/components/Card.astro';
           at a time — pause with <code>CARTOGRAPH_DRIFT_AUTOFIX=0</code>.
           <code>scripts/setup-launchd.sh</code> adds KeepAlive supervision
           and a 03:30 maintenance backstop: the same drift drain, content
-          lint, anchor-gap fixes, curation drain, session archival. The
-          injection-cost card on
+          lint, anchor-gap fixes, curation drain, session archival.
+          Supervision is drift-proof: every server start routes through
+          launchd (no detached process can win the port and lock the
+          supervisor out), and a self-healer runs at SessionStart and in
+          maintenance to clear any orphan and re-bind launchd if it ever
+          does. The injection-cost card on
           <a href="/" class="text-accent hover:underline">Home</a> flags any
           repo whose bedrock outgrows its token budget.
         </p>
@@ -361,7 +365,7 @@ import Card from '~/components/Card.astro';
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/prs/" class="font-bold text-accent hover:underline">PRs <code class="text-xs">/prs/</code></a>
-        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the six tracked upstreams. State, mergeable, review decision, age.</p>
+        <p class="text-sm text-muted mt-1">Every pull request opened by <code>[your-github-user]</code> across the eight tracked upstreams. State, mergeable, review decision, age.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/repo/" class="font-bold text-accent hover:underline">Repos <code class="text-xs">/repo/</code></a>
@@ -493,7 +497,7 @@ import Card from '~/components/Card.astro';
           Then <code>/stack-submit</code> force-pushes every updated branch
           with <code>--force-with-lease</code>. Throughout, the
           <a href="/prs/" class="text-accent hover:underline">/prs/</a> page
-          shows live status across all six upstreams.
+          shows live status across all eight upstreams.
         </p>
       </div>
 

@@ -19,8 +19,20 @@ PY="${1:-${CARTOGRAPH_PYTHON:-python3}}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${CARTOGRAPH_PORT:-47777}"
 
-# Let the HTTP response flush before we kill the listener handling it.
+# Let the HTTP response flush before we touch the listener handling it.
 sleep 1
+
+# When launchd supervises the server, restart THROUGH launchd — never spawn a
+# detached serve.py here, which would become an orphan that holds the port and
+# locks launchd out (Errno 48 → KeepAlive backoff → supervision drift). Only
+# fall through to the manual relaunch below when the agent isn't installed.
+# shellcheck source=lib/serve-control.sh
+source "$ROOT/scripts/lib/serve-control.sh"
+if cg_launchd_managed; then
+  echo "[restart-server] $(date -u +%FT%TZ) launchd-managed — kickstarting $CG_SERVE_LABEL" >&2
+  cg_serve_restart
+  exit 0
+fi
 
 listeners() {
   command -v lsof >/dev/null 2>&1 || return 0

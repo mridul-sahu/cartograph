@@ -24,6 +24,25 @@ if cg_in_headless || cg_headless_disabled; then
   exit 0
 fi
 
+# Supervision self-heal: if launchd manages the server but an orphan won the
+# port (or it's down), repair it. Cheap (one lsof + one launchctl print) and
+# silent unless it actually fixes drift.
+# shellcheck source=lib/serve-control.sh
+source "$DIR/lib/serve-control.sh" 2>/dev/null && cg_serve_heal || true
+
+# Surface a stale nightly maintenance pass (machine asleep through the 03:30
+# slot, launchd agent unloaded, etc.) so a silently-not-running maintenance
+# is visible in the error feed instead of invisible.
+maint_log="$CARTOGRAPH_ROOT/.cartograph/maintenance.log"
+if [[ -f "$maint_log" ]]; then
+  age_h="$(python3 -c "import os,time;print(int((time.time()-os.path.getmtime('$maint_log'))/3600))" 2>/dev/null || echo 0)"
+  if (( age_h > 36 )); then
+    source "$DIR/lib/errors.sh" 2>/dev/null \
+      && cg_log_error session-start "maintenance.log ${age_h}h stale — nightly pass may not be firing (launchctl print gui/\$(id -u)/com.cartograph.maintenance)" \
+      || true
+  fi
+fi
+
 "$DIR/upstream-sync.sh" || true
 bash "$DIR/digest.sh" || true
 bash "$DIR/auto-promote.sh" || true

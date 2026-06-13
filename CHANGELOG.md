@@ -28,6 +28,32 @@ publish time.)
 
 ---
 
+## v2026.06.13
+
+### Fixed
+
+- **launchd supervision can no longer drift.** Previously a detached
+  server started outside launchd (by a restart helper) could win the
+  listen port and lock the supervisor into bind-fail backoff —
+  supervision silently disabled while the site still worked. Now a single
+  supervision-aware control layer (`scripts/lib/serve-control.sh`) routes
+  every start/restart through `launchctl` when the agent is installed, so
+  no competing detached process is ever spawned.
+- The error logger was silently a no-op when its lib was sourced from a
+  non-bash shell (it resolved its path via `BASH_SOURCE`); now anchored to
+  the project root, so drift repairs are always recorded.
+
+### Added
+
+- **Supervision self-heal**: `cg_serve_heal` runs at SessionStart and in
+  nightly maintenance — if an orphan holds the port or the server is down,
+  it clears the holder, re-binds launchd, and logs the repair.
+  `scripts/doctor.sh` gained a report-only supervision check (OK / drift /
+  down), and SessionStart warns the error feed if the nightly maintenance
+  pass goes stale (>36h).
+
+---
+
 ## v2026.06.12
 
 ### Added

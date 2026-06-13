@@ -93,6 +93,26 @@ if [[ "$CARTOGRAPH_SSH_HOST_ALIAS" != "github.com" ]]; then
   fi
 fi
 
+# Server supervision: if the launchd agent is installed, confirm launchd
+# actually owns the listen port (not an orphan). Report-only — the heal runs
+# in SessionStart + maintenance; doctor just surfaces drift for a manual look.
+# shellcheck source=lib/serve-control.sh
+source "$(dirname "$0")/lib/serve-control.sh" 2>/dev/null || true
+if declare -f cg_launchd_managed >/dev/null 2>&1 && cg_launchd_managed; then
+  managed_pid="$(cg_launchd_pid)"
+  port_pids="$(cg_serve_port_listeners | tr '\n' ' ' | sed 's/ *$//')"
+  foreign=""
+  for p in $port_pids; do [[ "$p" == "$managed_pid" ]] || foreign+="$p "; done
+  if [[ -n "$foreign" ]]; then
+    echo "  WARN serve supervision drift: foreign listener(s) [$foreign] hold :$CG_SERVE_PORT, not launchd pid '$managed_pid'"
+    echo "       heal: bash scripts/serve-cartograph.sh --restart  (or it self-heals next SessionStart)"
+  elif [[ -z "$port_pids" && -z "$managed_pid" ]]; then
+    echo "  WARN serve down: launchd agent installed but nothing on :$CG_SERVE_PORT — self-heals next SessionStart"
+  else
+    echo "  OK   serve supervised by launchd (pid $managed_pid on :$CG_SERVE_PORT)"
+  fi
+fi
+
 # Active gh user — warn if it doesn't match the configured account, so
 # operations that go through `gh` (PR queries, fork-setup) don't silently
 # act as the wrong identity.

@@ -22,6 +22,8 @@ set -uo pipefail
 source "$(dirname "$0")/lib/headless.sh"   # also sets CARTOGRAPH_ROOT
 # shellcheck source=lib/errors.sh
 source "$(dirname "$0")/lib/errors.sh"
+# shellcheck source=lib/serve-control.sh
+source "$(dirname "$0")/lib/serve-control.sh"
 
 cg_autospawn_guard   # never run from inside a headless agent / kill switch on
 
@@ -108,9 +110,17 @@ archive_out="$(bash "$SCRIPTS/archive-sessions.sh" 2>/dev/null)" \
 archived="$(printf '%s\n' "$archive_out" | grep -oE 'archived [0-9]+' | grep -oE '[0-9]+' | head -1)"
 archived="${archived:-0}"
 
+# ── e2. supervision self-heal ───────────────────────────────────────────
+# Repair launchd drift (orphan holding the port, or server down) so the
+# nightly pass is a guaranteed recovery point even if no session ran.
+heal_out="$(cg_serve_heal 2>&1)" || cg_log_error maintenance "serve-heal failed"
+serve_healed=0
+[[ -n "$heal_out" ]] && serve_healed=1
+[[ -n "$heal_out" ]] && printf '%s\n' "$heal_out"
+
 # ── f. summary ──────────────────────────────────────────────────────────
 mkdir -p "$STATE_DIR"
-summary="drift_repos=$drift_repos drift_topics=$drift_topics lint=$lint_status anchors_enqueued=$anchors_enqueued reviews_enqueued=$reviews_enqueued drain_rc=$drain_rc archived=$archived"
+summary="drift_repos=$drift_repos drift_topics=$drift_topics lint=$lint_status anchors_enqueued=$anchors_enqueued reviews_enqueued=$reviews_enqueued drain_rc=$drain_rc archived=$archived serve_healed=$serve_healed"
 printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$summary" >> "$MAINT_LOG" 2>/dev/null \
   || cg_log_error maintenance "could not write maintenance.log"
 echo "maintenance: $summary"
