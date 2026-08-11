@@ -628,7 +628,10 @@ export function loadProposalRepos(): string[] {
 }
 
 export function loadProposals(repo: string): ProposalDoc[] {
+  // README.md is the per-repo portfolio overview and *.final-draft.md are
+  // docx-builder inputs — neither is a proposal note.
   return listMarkdown(join(PROPOSALS, repo))
+    .filter((p) => basename(p) !== 'README.md' && !p.endsWith('.final-draft.md'))
     .map(loadFile)
     .filter((d): d is MarkdownDoc => d !== null)
     .map((d) => toProposalDoc(d, repo))

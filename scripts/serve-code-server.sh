@@ -60,14 +60,6 @@ fi
 
 mkdir -p "$USER_DATA"
 
-# Check if already LISTENING (filter out stale CLOSED connections from the
-# browser holding pages from a previous run).
-existing=$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null || true)
-if [[ -n "$existing" ]]; then
-  echo "code-server already running on :$PORT (pid $(echo $existing | tr '\n' ' '))."
-  exit 0
-fi
-
 CMD=(
   "$CODE_SERVER_BIN"
   --bind-addr "127.0.0.1:$PORT"
@@ -84,7 +76,28 @@ CMD=(
 )
 
 if [[ "${1:-}" == "--foreground" ]]; then
+  # Foreground is launchd's entrypoint (KeepAlive supervision). A leftover
+  # detached instance must not win the port race — exiting 0 here would put
+  # KeepAlive into a respawn loop that never takes the port over. Evict any
+  # holder, wait for the socket to free, then exec.
+  existing=$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null || true)
+  if [[ -n "$existing" ]]; then
+    echo "evicting existing listener(s) on :$PORT ($(echo "$existing" | tr '\n' ' '))" >&2
+    echo "$existing" | xargs kill -9 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      [[ -z "$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null)" ]] && break
+      sleep 0.25
+    done
+  fi
   exec "${CMD[@]}"
+fi
+
+# Check if already LISTENING (filter out stale CLOSED connections from the
+# browser holding pages from a previous run).
+existing=$(lsof -ti:$PORT -sTCP:LISTEN 2>/dev/null || true)
+if [[ -n "$existing" ]]; then
+  echo "code-server already running on :$PORT (pid $(echo $existing | tr '\n' ' '))."
+  exit 0
 fi
 
 LOG="${TMPDIR:-/tmp}/cartograph-code-server.log"

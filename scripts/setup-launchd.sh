@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# scripts/setup-launchd.sh — install the two cartograph launchd user agents:
+# scripts/setup-launchd.sh — install the cartograph launchd user agents:
 #
 #   com.cartograph.serve        — serve.py under KeepAlive supervision
 #                                         (serve-cartograph.sh --foreground)
 #   com.cartograph.maintenance  — scripts/maintenance.sh daily at 03:30
+#   com.cartograph.code-server  — embedded VS Code under KeepAlive supervision
+#                                         (serve-code-server.sh --foreground);
+#                                         skipped if code-server isn't installed
 #
 # Templates live in scripts/launchd/*.plist with __CARTOGRAPH_ROOT__ /
 # __HOME__ placeholders; this installer substitutes them, copies the result
@@ -21,7 +24,7 @@ source "$(dirname "$0")/lib/load-config.sh"
 TEMPLATE_DIR="$CARTOGRAPH_ROOT/scripts/launchd"
 DEST_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$CARTOGRAPH_ROOT/.cartograph/logs"
-AGENTS=(com.cartograph.serve com.cartograph.maintenance)
+AGENTS=(com.cartograph.serve com.cartograph.maintenance com.cartograph.code-server)
 # Pre-rename labels (2026-06-10) — boot these out on every run so machines
 # that installed under the old names migrate cleanly.
 LEGACY_AGENTS=(com.cartograph.serve com.cartograph.maintenance)
@@ -75,8 +78,30 @@ PYTHON_BIN="$(resolve_python)" || {
 }
 echo "setup-launchd: serve python = $PYTHON_BIN"
 
+# code-server is optional (`brew install code-server`). Probe the same paths
+# serve-code-server.sh does; without a binary the agent would just crash-loop
+# under KeepAlive, so skip it with a hint instead of failing the install.
+have_code_server=0
+if command -v code-server >/dev/null 2>&1; then
+  have_code_server=1
+else
+  for candidate in \
+    /usr/local/opt/code-server/bin/code-server \
+    /opt/homebrew/opt/code-server/bin/code-server \
+    "$HOME/.local/bin/code-server"
+  do
+    [[ -x "$candidate" ]] && { have_code_server=1; break; }
+  done
+fi
+if (( have_code_server == 0 )); then
+  echo "setup-launchd: code-server not found — skipping com.cartograph.code-server (brew install code-server, then re-run)"
+fi
+
 failed=0
 for name in "${AGENTS[@]}"; do
+  if [[ "$name" == "com.cartograph.code-server" ]] && (( have_code_server == 0 )); then
+    continue
+  fi
   tmpl="$TEMPLATE_DIR/$name.plist"
   dest="$DEST_DIR/$name.plist"
   if [[ ! -f "$tmpl" ]]; then
@@ -113,5 +138,8 @@ if (( failed == 0 )); then
   echo "setup-launchd: done. check status with:"
   echo "  launchctl print gui/$uid/com.cartograph.serve | head -20"
   echo "  launchctl print gui/$uid/com.cartograph.maintenance | head -20"
+  if (( have_code_server == 1 )); then
+    echo "  launchctl print gui/$uid/com.cartograph.code-server | head -20"
+  fi
 fi
 exit "$failed"

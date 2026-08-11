@@ -4150,7 +4150,8 @@ def create_app() -> FastAPI:
         if not branches:
             return {"repo": repo, "default_branch": default_branch, "branches": [], "stacks": []}
 
-        # Sort oldest-first so a branch's parent has already been processed.
+        # Sort oldest-first for stable display ordering. Parent assignment
+        # below is topological (ancestry-based), not dependent on this order.
         branches.sort(key=lambda b: b["committed_at"])
 
         def is_ancestor(a: str, b: str) -> bool:
@@ -4164,24 +4165,37 @@ def create_app() -> FastAPI:
             except subprocess.TimeoutExpired:
                 return False
 
-        # Map name → parent (the most-recent earlier branch that is an ancestor
-        # of this one). Branches with no such ancestor have parent = main.
-        for i, b in enumerate(branches):
-            parent_name = default_branch
-            for prev in reversed(branches[:i]):
-                if is_ancestor(prev["sha"], b["sha"]):
-                    parent_name = prev["name"]
-                    break
+        # Distance from main, computed first — it doubles as the ranking key
+        # for "closest ancestor" below.
+        for b in branches:
+            main_ahead = _git(wd, "rev-list", "--count", f"{default_branch}..{b['name']}") or "0"
+            main_behind = _git(wd, "rev-list", "--count", f"{b['name']}..{default_branch}") or "0"
+            b["commits_ahead_of_main"] = int(main_ahead.strip() or 0)
+            b["commits_behind_main"] = int(main_behind.strip() or 0)
+
+        # Parent = the CLOSEST ancestor branch, chosen topologically. Among the
+        # other branches whose tip is an ancestor of this one, the closest is the
+        # one furthest from main (most commits ahead); ties break by name. No
+        # ancestor → parent = main. Ranking by ahead-of-main rather than committer
+        # date is what keeps this correct after a restack stamps sibling branches
+        # with the same committer second — the old timestamp sort then tie-broke
+        # alphabetically and misparented the stack.
+        for b in branches:
+            candidates = [
+                a for a in branches
+                if a["name"] != b["name"]
+                and a["sha"] != b["sha"]
+                and is_ancestor(a["sha"], b["sha"])
+            ]
+            parent_name = (
+                max(candidates, key=lambda a: (a["commits_ahead_of_main"], a["name"]))["name"]
+                if candidates else default_branch
+            )
             b["parent"] = parent_name
             ahead = _git(wd, "rev-list", "--count", f"{parent_name}..{b['name']}") or "0"
             behind = _git(wd, "rev-list", "--count", f"{b['name']}..{parent_name}") or "0"
             b["commits_ahead_of_parent"] = int(ahead.strip() or 0)
             b["commits_behind_parent"] = int(behind.strip() or 0)
-            # Distance from main — useful for the "rebase needed?" hint.
-            main_ahead = _git(wd, "rev-list", "--count", f"{default_branch}..{b['name']}") or "0"
-            main_behind = _git(wd, "rev-list", "--count", f"{b['name']}..{default_branch}") or "0"
-            b["commits_ahead_of_main"] = int(main_ahead.strip() or 0)
-            b["commits_behind_main"] = int(main_behind.strip() or 0)
 
         # Group into stacks. A stack is a chain rooted at `default_branch`.
         # Build children map from parent_name → list of child branches.
