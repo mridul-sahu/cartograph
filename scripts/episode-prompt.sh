@@ -166,14 +166,22 @@ episode has been written for ${today}. If you learned something durable,
 write a brief episode now (200-600 words) to:
   cartograph/episodes/${month}/${today}-${REPO}-<slug>.md
 
+EOF
+  if [[ "$auto" == "1" ]]; then
+    cat <<EOF
 If you don't write one, cartograph will auto-draft one in the background
 from the session log at ${session_log} for you to review later.
 EOF
-  if [[ "$auto" == "1" ]]; then
     # Enqueue, don't spawn — the batched drain (one agent) drafts it later.
     rel="${session_log#"$CARTOGRAPH_ROOT"/}"
     bash "$CARTOGRAPH_ROOT/scripts/curate.sh" enqueue episode "$REPO" "$rel" \
       || cg_log_error episode-prompt "enqueue episode $REPO $rel failed (rc=$?)"
+  else
+    cat <<'EOF'
+Background auto-drafting is disabled (token diet): nothing will draft
+this for you later. This session holds the context — write the episode
+now, or run /episode <title>.
+EOF
   fi
 fi
 

@@ -66,8 +66,13 @@ except Exception:
 }
 
 # ── c. anchor-coverage audit → enqueue anchor-fix tasks ─────────────────
+# Enqueued anchor tasks are drained by an LLM agent, so the enqueue is
+# gated OFF by default under the token diet: coverage gaps surface in
+# /queue for the active session instead. Opt back in with
+# CARTOGRAPH_AUTO_ANCHOR=1.
 coverage_json="$STATE_DIR/state/anchor-coverage.json"
-if python3 "$SCRIPTS/anchor-coverage.py" >/dev/null 2>&1; then
+if [[ "${CARTOGRAPH_AUTO_ANCHOR:-0}" == "1" ]] \
+  && python3 "$SCRIPTS/anchor-coverage.py" >/dev/null 2>&1; then
   while IFS=$'\t' read -r repo slug; do
     [[ -n "$repo" && -n "$slug" ]] || continue
     if bash "$SCRIPTS/curate.sh" enqueue anchor "$repo" "$slug"; then

@@ -5,6 +5,7 @@ import Chip from '~/components/Chip.astro';
 import HoverCard from '~/components/islands/HoverCard.tsx';
 import MermaidRehydrator from '~/components/islands/Mermaid.tsx';
 import BackfillButton from '~/components/islands/BackfillButton.tsx';
+import RefreshDriftButton from '~/components/islands/RefreshDriftButton.tsx';
 import CheckDriftButton from '~/components/islands/CheckDriftButton.tsx';
 import BranchDrift from '~/components/islands/BranchDrift.tsx';
 import AnchorCoverageStrip from '~/components/islands/AnchorCoverageStrip.tsx';
@@ -129,6 +130,7 @@ const sections = [
         >browse {repo} →</a>
         <BackfillButton repo={repo} client:load />
         <CheckDriftButton repo={repo} client:load />
+        <RefreshDriftButton repo={repo} client:load />
       </div>
     </div>
   </section>

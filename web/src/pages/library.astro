@@ -15,6 +15,9 @@ type Kind = 'design' | 'paper' | 'research-paper' | 'research' | 'walkthrough' |
 interface Entry {
   kind: Kind;
   repo?: string;
+  // Multi-repo notes (e.g. the ecosystem walkthrough's `repos: [jax, xla]`)
+  // list every repo here so each repo chip matches them.
+  repos?: string[];
   slug: string;
   title: string;
   href: string;
@@ -87,8 +90,15 @@ function walkFlatDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
     const fm = readFrontmatter(text);
     const slug = entry.replace(/\.md$/, '');
     const title = readH1(text) || slug;
+    // Flat dirs carry the repo in frontmatter: `repo: xla` or, for
+    // cross-repo notes, `repos: [jax, xla, ...]`.
+    const repos = fm.repos
+      ? fm.repos.replace(/^\[|\]$/g, '').split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
     out.push({
       kind,
+      repo: fm.repo || undefined,
+      repos,
       slug,
       title,
       href: `/${hrefPrefix}/${slug}/`,
@@ -159,7 +169,9 @@ entries.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 // data-kind/data-repo; the inline script below reads the URL + chip clicks and
 // shows/hides rows live, keeping the URL shareable.
 const allKinds: Kind[] = ['design', 'paper', 'research-paper', 'research', 'walkthrough', 'draft', 'ramp-up'];
-const allRepos = Array.from(new Set(entries.map((e) => e.repo).filter(Boolean))).sort() as string[];
+const allRepos = Array.from(
+  new Set(entries.flatMap((e) => [e.repo, ...(e.repos || [])]).filter(Boolean)),
+).sort() as string[];
 const totalCount = entries.length;
 ---
 
@@ -196,7 +208,7 @@ const totalCount = entries.length;
     <p id="lib-empty" class="p-5 text-sm text-muted hidden">No documents match these facets.</p>
     <ul class="divide-y-2 divide-border-soft">
       {entries.map((e, i) => (
-        <li class={i % 2 === 0 ? 'lib-row bg-bg' : 'lib-row bg-[var(--surface-1)]'} data-kind={e.kind} data-repo={e.repo || ''}>
+        <li class={i % 2 === 0 ? 'lib-row bg-bg' : 'lib-row bg-[var(--surface-1)]'} data-kind={e.kind} data-repo={e.repo || ''} data-repos={(e.repos || []).join(' ')}>
           <a href={e.href} class="block px-5 py-3 hover:bg-[var(--surface-2)] no-underline text-fg">
             <div class="flex items-baseline justify-between gap-4">
               <div class="min-w-0 flex-1">
@@ -255,7 +267,9 @@ const totalCount = entries.length;
       function apply() {
         const matching = rows.filter((row) => {
           const okType = !curType || row.getAttribute('data-kind') === curType;
-          const okRepo = !curRepo || row.getAttribute('data-repo') === curRepo;
+          const okRepo = !curRepo
+            || row.getAttribute('data-repo') === curRepo
+            || (row.getAttribute('data-repos') || '').split(' ').includes(curRepo);
           return okType && okRepo;
         });
         const pageCount = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));

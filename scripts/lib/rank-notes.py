@@ -21,6 +21,7 @@ never used (the negative-feedback signal), else 0.
 import argparse
 import json
 import math
+import os
 import pathlib
 import re
 import sys
@@ -185,6 +186,15 @@ def main() -> int:
     out = sys.stdout
 
     def emit_full(rel: str, text: str) -> None:
+        # Token diet: cap injected bodies. Long notes get their head plus a
+        # pointer; the agent Reads the file when it needs the rest.
+        max_lines = int(os.environ.get("CARTOGRAPH_INJECT_MAX_NOTE_LINES", "300"))
+        lines = text.splitlines()
+        if max_lines > 0 and len(lines) > max_lines:
+            text = "\n".join(lines[:max_lines]) + (
+                f"\n[... truncated at {max_lines} of {len(lines)} lines — "
+                f"Read {rel} for the rest]"
+            )
         out.write(f"--- {rel} ---\n{text}\n\n")
         emitted.append(rel)
 

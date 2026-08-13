@@ -1,83 +1,79 @@
 #!/usr/bin/env bash
-# scripts/drift-drain.sh — one best-effort pass over every open drift report.
+# scripts/drift-drain.sh — one deterministic pass over open drift reports.
 #
-#   drift-drain.sh [drain]   resolve all open drift, one headless agent at a
-#                            time (repo-level via auto-revise.sh, per-topic
-#                            via drift-fix.sh)
-#   drift-drain.sh count     number of open drift reports (cheap, no claude)
+#   drift-drain.sh [drain] [<repo>]  re-detect per-topic drift, then
+#                                    mechanically re-anchor line-shift
+#                                    citations (reanchor.py) and close the
+#                                    reports that were pure bookkeeping.
+#                                    With <repo>, only that fork.
+#   drift-drain.sh count [<repo>]    number of open drift reports (cheap)
 #
-# Every claude spawn underneath routes through lib/headless.sh, so the global
-# CARTOGRAPH_HEADLESS_MAX cap, the recursion guard, and the kill switch all
-# apply. When a spawn defers (cap occupied) the pass stops early — the
-# remaining reports are untouched and retry on the next pass. Callers:
-# serve.py's drift loop (interval-driven) and maintenance.sh (nightly).
+# NO tokens are spent here: since the token-diet rework
+# (claude-designs/cartograph/token-diet), the drain is git + python only.
+# Reports that survive the pass need judgment and are surfaced to the
+# ACTIVE session via the orientation injection (fix per CLAUDE.md §4).
+# Repo-level bedrock reports (.drift-reports/<repo>.md) are likewise
+# active-session work per §3b; the drain re-anchors bedrock citations but
+# never closes those reports itself. For a rare deliberate bulk LLM pass,
+# run scripts/auto-revise.sh / scripts/drift-fix.sh by hand.
+# Callers: serve.py's drift loop, session-start.sh, repo-refresh.sh,
+# maintenance.sh.
 
 set -uo pipefail
 
-# shellcheck source=lib/headless.sh
-source "$(dirname "$0")/lib/headless.sh"   # also sets CARTOGRAPH_ROOT
+# shellcheck source=lib/load-config.sh
+source "$(dirname "$0")/lib/load-config.sh"
 # shellcheck source=lib/errors.sh
 source "$(dirname "$0")/lib/errors.sh"
 
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 DRIFT_DIR="$CARTOGRAPH_ROOT/.drift-reports"
+WORKSPACE="$CARTOGRAPH_ROOT/workspace"
 
 cg_drift_count() {
-  local n=0
-  n=$(( $(find "$DRIFT_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l) ))
-  n=$(( n + $(find "$DRIFT_DIR/topics" -mindepth 2 -maxdepth 2 -name '*.md' -type f 2>/dev/null | wc -l) ))
+  local only="${1:-}" n=0
+  if [[ -n "$only" ]]; then
+    [[ -f "$DRIFT_DIR/$only.md" ]] && n=1
+    n=$(( n + $(find "$DRIFT_DIR/topics/$only" -mindepth 1 -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l) ))
+  else
+    n=$(( $(find "$DRIFT_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l) ))
+    n=$(( n + $(find "$DRIFT_DIR/topics" -mindepth 2 -maxdepth 2 -name '*.md' -type f 2>/dev/null | wc -l) ))
+  fi
   printf '%s\n' "$n"
 }
 
 cg_drift_drain() {
-  cg_autospawn_guard           # no-op inside a headless agent / kill switch on
-
-  local repos=0 topics=0 deferred=0 rc
-
-  # Repo-level reports (.drift-reports/<repo>.md) → auto-revise.sh.
-  local report repo
-  for report in "$DRIFT_DIR"/*.md; do
-    [[ -f "$report" ]] || continue
-    repo="$(basename "${report%.md}")"
-    echo "drift-drain: auto-revise '$repo'"
-    rc=0
-    bash "$SCRIPTS/auto-revise.sh" "$repo" || rc=$?
-    if (( rc == 75 || rc == 77 )); then
-      deferred=1
-      break
-    fi
-    if (( rc != 0 )); then
-      cg_log_error drift-drain "auto-revise $repo failed (rc=$rc)"
-    fi
-    repos=$((repos + 1))
-  done
-
-  # Per-topic reports (.drift-reports/topics/<repo>/<slug>.md) → drift-fix.sh.
-  local slug
-  if (( deferred == 0 )) && [[ -d "$DRIFT_DIR/topics" ]]; then
-    while IFS= read -r report; do
-      repo="$(basename "$(dirname "$report")")"
-      slug="$(basename "${report%.md}")"
-      echo "drift-drain: drift-fix '$repo/$slug'"
-      rc=0
-      bash "$SCRIPTS/drift-fix.sh" "$repo" "$slug" || rc=$?
-      if (( rc == 75 || rc == 77 )); then
-        deferred=1
-        break
-      fi
-      if (( rc != 0 )); then
-        cg_log_error drift-drain "drift-fix $repo/$slug failed (rc=$rc)"
-      fi
-      topics=$((topics + 1))
-    done < <(find "$DRIFT_DIR/topics" -mindepth 2 -maxdepth 2 -name '*.md' -type f 2>/dev/null | sort)
+  local only="${1:-}" rc=0
+  local repos=()
+  if [[ -n "$only" ]]; then
+    repos=("$only")
+  else
+    while IFS= read -r -d '' d; do
+      [[ -d "$d/.git" ]] && repos+=("$(basename "$d")")
+    done < <(find "$WORKSPACE" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
   fi
 
-  echo "drift-drain: repos=$repos topics=$topics deferred=$deferred remaining=$(cg_drift_count)"
+  local repo before after
+  for repo in "${repos[@]}"; do
+    before="$(cg_drift_count "$repo")"
+    # Detection first (broad, git-only), then the mechanical resolver
+    # (narrow): reports left afterwards genuinely need a human read.
+    bash "$SCRIPTS/topic-drift.sh" "$repo" >/dev/null 2>&1 || rc=$?
+    python3 "$SCRIPTS/reanchor.py" "$repo" 2>&1 | tail -1 || rc=$?
+    after="$(cg_drift_count "$repo")"
+    echo "drift-drain: $repo: reports $before -> $after (deterministic pass)"
+    if (( rc != 0 )); then
+      cg_log_error drift-drain "deterministic pass for $repo exited rc=$rc"
+      rc=0
+    fi
+  done
+
+  echo "drift-drain: remaining=$(cg_drift_count "$only") — survivors need an active-session read (§4)"
 }
 
 cmd="${1:-drain}"
 case "$cmd" in
-  drain) cg_drift_drain ;;
-  count) cg_drift_count ;;
-  *) echo "usage: drift-drain.sh [drain|count]" >&2; exit 2 ;;
+  drain) cg_drift_drain "${2:-}" ;;
+  count) cg_drift_count "${2:-}" ;;
+  *) echo "usage: drift-drain.sh [drain|count] [<repo>]" >&2; exit 2 ;;
 esac

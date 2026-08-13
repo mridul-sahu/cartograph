@@ -31,9 +31,13 @@ function normalize(j: unknown): CostRow[] {
   if (j && typeof j === 'object') {
     const o = j as Record<string, unknown>;
     if (Array.isArray(o.repos)) return o.repos.map((v, i) => toRow(String(i), v));
+    // The live payload: {repos: {<repo>: {...}}, budget_tokens, budget_warn}.
+    if (o.repos && typeof o.repos === 'object') {
+      return Object.entries(o.repos as Record<string, unknown>).map(([k, v]) => toRow(k, v));
+    }
     // Plain {repo: estimate} map — skip envelope-ish keys.
     return Object.entries(o)
-      .filter(([k]) => !['generated_at', 'total', 'ok'].includes(k))
+      .filter(([k]) => !['generated_at', 'total', 'ok', 'budget_tokens', 'budget_warn'].includes(k))
       .map(([k, v]) => toRow(k, v));
   }
   return [];

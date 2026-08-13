@@ -254,7 +254,7 @@ CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
      "label": "Curate batch size", "help": "Max tasks one drain agent handles per pass; the rest drain next interval."},
     {"key": "CARTOGRAPH_DRIFT_AUTOFIX", "group": "Headless control", "type": "bool",
      "default": "1", "applies": "immediate",
-     "label": "Drift auto-fix", "help": "0 = pause the background drift-drain loop; reports wait for /auto-revise or maintenance."},
+     "label": "Drift auto-fix", "help": "0 = pause the background drift pass (deterministic re-anchor; no tokens). Surviving reports always wait for an active session."},
     {"key": "CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "group": "Headless control", "type": "int",
      "default": "1800", "applies": "restart",
      "label": "Drift drain interval (s)", "help": "Seconds between drift-drain passes (auto-revise + drift-fix under the headless cap)."},
@@ -1061,13 +1061,16 @@ def _curate_loop() -> None:
 
 
 def _drift_loop() -> None:
-    """Periodically resolve open drift reports via drift-drain.sh.
+    """Periodically run the deterministic drift pass via drift-drain.sh.
 
-    Same shape as _curate_loop: at most one drain pass per interval, and only
-    when a report is actually open. The drain runs agents sequentially under
-    the global headless cap and stops early when the cap defers, so it can
-    never stack on top of a running curation drain. CARTOGRAPH_DRIFT_AUTOFIX=0
-    pauses the loop without a restart. Never dies.
+    Since the token-diet rework the drain spends no tokens: it re-detects
+    per-topic drift (git) and mechanically re-anchors line-shift citations
+    (reanchor.py), closing reports that were pure bookkeeping. Reports that
+    survive need judgment and wait for an active session (the orientation
+    injection surfaces them). Detection lives inside the drain now, so the
+    pass runs every interval rather than only when a report is already
+    open. CARTOGRAPH_DRIFT_AUTOFIX=0 pauses the loop without a restart.
+    Never dies.
     """
     script = PROJECT_ROOT / "scripts" / "drift-drain.sh"
     while True:
@@ -1075,18 +1078,12 @@ def _drift_loop() -> None:
         try:
             if os.environ.get("CARTOGRAPH_DRIFT_AUTOFIX", "1") == "0":
                 continue
-            count = subprocess.run(  # noqa: S603
-                ["bash", str(script), "count"],
-                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
-            ).stdout.strip()
-            if count and count != "0":
-                LOG.info("drift: %s open report(s) — draining", count)
-                r = subprocess.run(  # noqa: S603
-                    ["bash", str(script), "drain"],
-                    cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=1800,
-                )
-                out = (r.stdout or r.stderr).strip()
-                LOG.info("drift: %s", out.splitlines()[-1] if out else f"drain rc={r.returncode}")
+            r = subprocess.run(  # noqa: S603
+                ["bash", str(script), "drain"],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=1800,
+            )
+            out = (r.stdout or r.stderr).strip()
+            LOG.info("drift: %s", out.splitlines()[-1] if out else f"drain rc={r.returncode}")
         except Exception as exc:  # noqa: BLE001 — loop must never die
             LOG.warning("drift loop: %s", exc)
 
@@ -1836,8 +1833,10 @@ def create_app() -> FastAPI:
             )
         args = ["bash", str(script)] + ([] if repo == "all" else [repo])
         try:
+            # The check chains into topic-drift.sh (per-citation git log -L
+            # over every note), which runs close to a minute on a big repo.
             result = subprocess.run(  # noqa: S603
-                args, capture_output=True, text=True, timeout=60,
+                args, capture_output=True, text=True, timeout=300,
                 cwd=str(PROJECT_ROOT),
             )
         except subprocess.TimeoutExpired:
@@ -4415,9 +4414,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=f"unknown repo: {repo}")
         if not _SLUG_RE.match(slug):
             raise HTTPException(status_code=400, detail="invalid slug")
-        script = PROJECT_ROOT / "scripts" / f"{kind}-fix.sh"
+        # "refresh" runs repo-refresh.sh (repo-wide, slug fixed to "all");
+        # the other kinds follow the <kind>-fix.sh naming.
+        script_name = {"refresh": "repo-refresh.sh"}.get(kind, f"{kind}-fix.sh")
+        script = PROJECT_ROOT / "scripts" / script_name
         if not script.exists():
-            raise HTTPException(status_code=500, detail=f"{kind}-fix.sh missing")
+            raise HTTPException(status_code=500, detail=f"{script_name} missing")
 
         # Refuse to spawn a duplicate if a run is in flight for this slug.
         status_path = PROJECT_ROOT / ".cartograph" / "jobs" / f"{kind}-{repo}-{slug}.json"
@@ -4456,6 +4458,16 @@ def create_app() -> FastAPI:
     def drift_fix(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
         """Fire-and-forget — poll /api/job/drift/{repo}/{slug} for status."""
         return _spawn_fix_job("drift", (body.get("repo") or "").strip(), (body.get("slug") or "").strip())
+
+    @app.post("/api/repo-refresh/{repo}")
+    def repo_refresh(repo: str) -> dict[str, Any]:
+        """Pull upstream + re-detect + drain drift for one fork.
+
+        Fire-and-forget spawn of scripts/repo-refresh.sh — poll
+        /api/job/refresh/{repo}/all for status. Used by the repo-page
+        "pull + fix drift" button and session-start's stale-repo kick.
+        """
+        return _spawn_fix_job("refresh", repo, "all")
 
     # If a status file says 'running' but has been idle this long, we assume
     # the script died between bash truncating the .tmp and python writing it
@@ -4529,8 +4541,8 @@ def create_app() -> FastAPI:
     @app.get("/api/job/{kind}/{repo}/{slug}")
     def job_status(kind: str, repo: str, slug: str) -> dict[str, Any]:
         """Poll the JSON status written by scripts/<kind>-fix.sh."""
-        if kind not in ("anchor", "drift"):
-            raise HTTPException(status_code=400, detail="kind must be anchor or drift")
+        if kind not in ("anchor", "drift", "refresh"):
+            raise HTTPException(status_code=400, detail="kind must be anchor, drift, or refresh")
         if repo not in REPOS:
             raise HTTPException(status_code=400, detail=f"unknown repo: {repo}")
         if not _SLUG_RE.match(slug):

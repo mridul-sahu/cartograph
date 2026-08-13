@@ -44,6 +44,25 @@ if [[ -f "$maint_log" ]]; then
 fi
 
 "$DIR/upstream-sync.sh" || true
+
+# Stale-repo pass: starting a session inside a fork kicks the deterministic
+# drift pass (topic-drift re-detection + reanchor.py) detached in the
+# background. Costs git + python only — no tokens (token-diet rework).
+# Reports that survive it are surfaced by the orientation injection as
+# work items for THIS session.
+if [[ "${CARTOGRAPH_DRIFT_AUTOFIX:-1}" != "0" ]]; then
+  _cwd="$(pwd -P)"
+  _ws="$(cd "$CARTOGRAPH_ROOT/workspace" 2>/dev/null && pwd -P || true)"
+  if [[ -n "$_ws" && "$_cwd" == "$_ws"/* ]]; then
+    _repo="${_cwd#"$_ws"/}"
+    _repo="${_repo%%/*}"
+    nohup bash "$DIR/drift-drain.sh" drain "$_repo" \
+      > /dev/null 2>&1 < /dev/null &
+    disown 2>/dev/null || true
+    echo "session-start: deterministic drift pass for $_repo running in background (no tokens)"
+  fi
+fi
+
 bash "$DIR/digest.sh" || true
 bash "$DIR/auto-promote.sh" || true
 bash "$DIR/auto-review-scan.sh" || true

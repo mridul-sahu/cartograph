@@ -52,9 +52,11 @@ record_injection() {
 payload="$(cat 2>/dev/null || true)"
 prompt=""
 hook_cwd=""
+session_id=""
 if command -v jq >/dev/null 2>&1 && [[ -n "$payload" ]]; then
   prompt="$(echo "$payload" | jq -r '.prompt // .user_prompt // empty' 2>/dev/null || true)"
   hook_cwd="$(echo "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
+  session_id="$(echo "$payload" | jq -r '.session_id // empty' 2>/dev/null || true)"
 fi
 
 # Determine scope. Prefer hook-provided cwd; fall back to actual pwd.
@@ -194,32 +196,100 @@ EOF
 
 EOF
 
-  # Layer 1b: bedrock for this repo
+  # Layer 1b: bedrock for this repo.
+  #
+  # Bedrock diet: the full bedrock + seams go out on the FIRST turn of a
+  # session and every Nth turn after (compaction insurance); other turns
+  # get one title line per file. A model that read the bedrock on turn 1
+  # still holds it in context; re-sending ~20k tokens every turn was the
+  # single largest interactive cost (claude-designs/cartograph/token-diet).
+  # CARTOGRAPH_BEDROCK_REINJECT_EVERY=1 restores the legacy every-turn
+  # behavior; a missing session id (manual invocation, /orient) always
+  # injects in full.
+  BEDROCK_EVERY="${CARTOGRAPH_BEDROCK_REINJECT_EVERY:-15}"
+  bedrock_full=1
+  turn_file=""
+  if [[ -n "$session_id" && "$BEDROCK_EVERY" != "1" ]]; then
+    state_dir="$CARTOGRAPH_ROOT/.cartograph/state/inject"
+    mkdir -p "$state_dir"
+    find "$state_dir" -type f -mtime +7 -delete 2>/dev/null || true
+    turn_file="$state_dir/$session_id"
+    turns=$(( $(cat "$turn_file" 2>/dev/null || echo 0) + 1 ))
+    printf '%s' "$turns" > "$turn_file"
+    if (( (turns - 1) % BEDROCK_EVERY != 0 )); then
+      bedrock_full=0
+    fi
+  fi
+  case "$prompt" in
+    */orient*)
+      bedrock_full=1
+      [[ -n "$turn_file" ]] && printf '1' > "$turn_file"
+      ;;
+  esac
+
   if [[ -d "$GUIDES/$REPO" ]]; then
-    for f in overview.md architecture.md conventions.md; do
-      path="$GUIDES/$REPO/$f"
-      if [[ -f "$path" ]]; then
-        echo "--- guides/$REPO/$f ---"
-        cat "$path"
-        echo
-      fi
-    done
+    if (( bedrock_full )); then
+      for f in overview.md architecture.md conventions.md; do
+        path="$GUIDES/$REPO/$f"
+        if [[ -f "$path" ]]; then
+          echo "--- guides/$REPO/$f ---"
+          cat "$path"
+          echo
+        fi
+      done
+    else
+      echo "[bedrock] Injected in full earlier this session (still in your context):"
+      for f in overview.md architecture.md conventions.md; do
+        [[ -f "$GUIDES/$REPO/$f" ]] && echo "  - guides/$REPO/$f"
+      done
+      echo "  - guides/seams.md"
+      echo "  Read any of these only if the earlier injection was compacted away;"
+      echo "  /orient re-injects everything in full."
+      echo
+    fi
   fi
 
-  # Layer 1c: drift report if upstream has advanced since last backfill
+  # Layer 1c: drift report if upstream has advanced since last backfill.
+  # Full on the same turns as bedrock; a one-line pointer otherwise.
   drift_report="$CARTOGRAPH_REAL/.drift-reports/$REPO.md"
   if [[ -f "$drift_report" ]]; then
-    echo "--- .drift-reports/$REPO.md ---"
-    cat "$drift_report"
-    echo
-    echo "[important] Bedrock above predates current upstream. If anything in the"
-    echo "diff above contradicts the bedrock, update bedrock files in place and"
-    echo "bump their backfilled_from_sha frontmatter to the current upstream sha."
-    echo
+    if (( bedrock_full )); then
+      echo "--- .drift-reports/$REPO.md ---"
+      cat "$drift_report"
+      echo
+      echo "[important] Bedrock above predates current upstream. If anything in the"
+      echo "diff above contradicts the bedrock, update bedrock files in place and"
+      echo "bump their backfilled_from_sha frontmatter to the current upstream sha."
+      echo
+    else
+      echo "[drift] .drift-reports/$REPO.md is OPEN (injected in full earlier this"
+      echo "  session). Resolve per CLAUDE.md §3b before trusting bedrock claims."
+      echo
+    fi
   fi
 
-  # Layer 2: cross-repo seams
-  if [[ -f "$GUIDES/seams.md" ]]; then
+  # Layer 1d: surviving per-topic drift = this session's curation queue.
+  # Mechanical re-anchoring (reanchor.py) has already run; what remains
+  # needs judgment, and no background agent will do it (token diet).
+  topics_drift_dir="$CARTOGRAPH_REAL/.drift-reports/topics/$REPO"
+  if [[ -d "$topics_drift_dir" ]]; then
+    topic_reports="$(find "$topics_drift_dir" -maxdepth 1 -name '*.md' 2>/dev/null | sort)"
+    topic_report_count="$(printf '%s\n' "$topic_reports" | grep -c . 2>/dev/null || echo 0)"
+    if (( topic_report_count > 0 )); then
+      echo "[drift-work] $topic_report_count topic note(s) have citations needing judgment."
+      echo "  Fix the ones touching your task now, and at least one regardless (§4):"
+      printf '%s\n' "$topic_reports" | head -3 | while IFS= read -r r; do
+        [[ -n "$r" ]] && echo "  - .drift-reports/topics/$REPO/$(basename "$r") -> guides/$REPO/topics/$(basename "$r")"
+      done
+      (( topic_report_count > 3 )) && echo "  (+$((topic_report_count - 3)) more under .drift-reports/topics/$REPO/)"
+      echo "  Each: Read the report + cited regions; revise the note; bump last_revised."
+      echo
+    fi
+  fi
+
+  # Layer 2: cross-repo seams (same once-per-session diet as bedrock; the
+  # lean turns list it in the bedrock reminder block above).
+  if [[ -f "$GUIDES/seams.md" ]] && (( bedrock_full )); then
     echo "--- guides/seams.md ---"
     cat "$GUIDES/seams.md"
     echo
@@ -248,6 +318,17 @@ EOF
   # surfaced this turn. Cleaned up when the subshell exits.
   emitted_file="$(mktemp "${TMPDIR:-/tmp}/cartograph-emitted.XXXXXX")"
   trap 'rm -f "$emitted_file"' EXIT
+
+  # Session-level dedupe (token diet): notes already surfaced this session
+  # (recorded in the session log by record_injection) are skipped on lean
+  # turns — the agent already has them in context. Full turns (turn 1,
+  # every Nth, /orient) start from a clean ledger, so a compacted session
+  # recovers everything at the next full turn.
+  if [[ "${CARTOGRAPH_INJECT_DEDUPE:-1}" == "1" ]] && (( ! bedrock_full )) \
+     && [[ -n "$SESSION_LOG" && -f "$SESSION_LOG" ]]; then
+    grep -oE '<!-- injected: [^>]+ -->' "$SESSION_LOG" 2>/dev/null \
+      | sed -E 's/<!-- injected: (.*) -->/\1/' | sort -u >> "$emitted_file" || true
+  fi
 
   bm25_index="$CARTOGRAPH_REAL/.cartograph/index/bm25.json"
 
