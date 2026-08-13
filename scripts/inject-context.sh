@@ -229,7 +229,7 @@ EOF
 
   if [[ -d "$GUIDES/$REPO" ]]; then
     if (( bedrock_full )); then
-      for f in overview.md architecture.md conventions.md; do
+      for f in overview.md architecture.md conventions.md heuristics.md; do
         path="$GUIDES/$REPO/$f"
         if [[ -f "$path" ]]; then
           echo "--- guides/$REPO/$f ---"
@@ -237,9 +237,21 @@ EOF
           echo
         fi
       done
+      # Heuristics budget nag: the file is a curated playbook, not a log.
+      # Over budget, the session must merge/evict before appending more.
+      hpath="$GUIDES/$REPO/heuristics.md"
+      if [[ -f "$hpath" ]]; then
+        hbudget="$(grep -m1 '^budget_lines:' "$hpath" | grep -oE '[0-9]+' || echo 60)"
+        hlines="$(grep -c . "$hpath" || true)"
+        if (( hlines > hbudget )); then
+          echo "[heuristics] OVER BUDGET: $hlines/$hbudget non-empty lines. Merge or"
+          echo "  evict rules in guides/$REPO/heuristics.md before appending new ones."
+          echo
+        fi
+      fi
     else
       echo "[bedrock] Injected in full earlier this session (still in your context):"
-      for f in overview.md architecture.md conventions.md; do
+      for f in overview.md architecture.md conventions.md heuristics.md; do
         [[ -f "$GUIDES/$REPO/$f" ]] && echo "  - guides/$REPO/$f"
       done
       echo "  - guides/seams.md"
@@ -283,6 +295,24 @@ EOF
       done
       (( topic_report_count > 3 )) && echo "  (+$((topic_report_count - 3)) more under .drift-reports/topics/$REPO/)"
       echo "  Each: Read the report + cited regions; revise the note; bump last_revised."
+      echo
+    fi
+  fi
+
+  # Layer 1e: curation agenda for this repo (full turns only) — the
+  # deterministic sleep-time analysis (near-dups, decay, coverage gaps,
+  # open contradictions). Judgment work for THIS session; nothing in the
+  # background will act on it.
+  agenda="$CARTOGRAPH_REAL/.cartograph/state/curation-agenda.md"
+  if (( bedrock_full )) && [[ -f "$agenda" ]]; then
+    agenda_items="$(awk -v repo="## $REPO" '
+      $0 ~ "^" repo { grab=1; next }
+      /^## / { grab=0 }
+      grab && /^- / { print }
+    ' "$agenda" | head -3)"
+    if [[ -n "$agenda_items" ]]; then
+      echo "[curation-agenda] top items for $REPO (full list: .cartograph/state/curation-agenda.md):"
+      printf '%s\n' "$agenda_items" | sed 's/^/  /'
       echo
     fi
   fi

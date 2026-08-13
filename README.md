@@ -120,11 +120,11 @@ You don't think about it; it just runs.
 
 | Hook event | Hooks fired | What happens |
 |---|---|---|
-| **SessionStart** | `session-log.sh start` · `upstream-sync.sh` · `digest.sh` · `auto-promote.sh` · `build-file-index.py` · `build-search-index.py` · `anchor-coverage.py` · `diary.sh --if-stale` | Opens a session log. Fetches upstream and writes drift reports. Surfaces promotion candidates. **Auto-promotes ≥3 same-tag episodes into a topic note via `claude -p`.** Rebuilds the file reverse-index and BM25 search index. Audits anchor coverage. Writes today's diary entry. |
+| **SessionStart** | `session-log.sh start` · `upstream-sync.sh` · `digest.sh` · `auto-promote.sh` · `build-file-index.py` · `build-search-index.py` · `anchor-coverage.py` · `diary.sh --if-stale` | Opens a session log. Fetches upstream and writes drift reports. Surfaces promotion candidates. Surfaces ≥3 same-tag episodes as `/promote` candidates (headless auto-promotion ships off by default). Rebuilds the file reverse-index and BM25 search index. Audits anchor coverage. Writes today's diary entry. |
 | **UserPromptSubmit** | `inject-context.sh` | Detects scope from `cwd`; injects bedrock + seams + top-3 topics + top-3 episodes + top-3 research notes ranked by keyword overlap + BM25 rerank. **Claude sees this before every turn.** |
 | **PreToolUse** (Read / Edit) | `pre-read-augment.sh` · `pre-edit-augment.sh` | Before any `Read`, injects every cartograph note citing that file path. Before any `Edit` of a topic note, fetches its drift report. |
 | **PostToolUse** (Edit / Write) | `token-check.sh` · `session-log.sh touch` · `post-edit-topic-mark.sh` · `normalize-note-frontmatter.sh` | Scans new content for forbidden identity tokens. Marks edited topics for re-review. Backfills missing frontmatter fields. |
-| **Stop** | `episode-prompt.sh` · `usage-audit.sh` · `session-log.sh stop` | Reminds Claude to write an episode if anything was learned. **Auto-drafts an episode in the background via `claude -p`** if ≥3 edits happened with no episode written. Same for research/paper notes if the session used WebFetch / WebSearch. |
+| **Stop** | `episode-prompt.sh` · `usage-audit.sh` · `session-log.sh stop` | Reminds Claude to write an episode if anything was learned. Background auto-drafting of episodes / research notes ships off by default (token diet); the reminder tells the session to write its own. |
 
 The result: orientation injects context, you do the work, hooks capture
 what happened, slash commands let you author or revise, the local UI lets
@@ -268,8 +268,10 @@ for the eval harness — see feature 12).
 ### 2. The compounding loop (episodes → topics → bedrock)
 
 Episodes are cheap: write one whenever a session produces a durable
-insight. The Stop hook reminds you; if you skip, an auto-draft fires in
-the background via `claude -p`.
+insight. The Stop hook reminds you. (Background auto-drafting via
+`claude -p` exists but ships OFF by default: under the token-diet
+architecture the active session, which already holds the context, writes
+its own notes. Opt back in with `CARTOGRAPH_AUTO_EPISODE=1`.)
 
 ```
 You write 3+ episodes tagged `pjit-axes` over a few weeks.
@@ -303,17 +305,42 @@ the diff already in front of you.
 
 Three ways drift gets closed:
 
-- **Automatically:** the server runs a drift loop that resolves open
-  reports on an interval (default 30 min) — repo-level reports via the
-  auto-revise path, per-topic reports via the per-citation fixer — one
-  capped headless agent at a time, under the same global agent cap as
-  curation. Pause it with `CARTOGRAPH_DRIFT_AUTOFIX=0`; audit what it
-  changed via `git log` on `guides/`.
-- **Manually:** `/revise <topic>`; bump `last_revised:`; write a small
-  episode.
-- **On demand:** `/auto-revise <repo>` runs the same headless resolution
-  immediately instead of waiting for the loop. You review the diff and
-  accept or revert.
+- **Mechanically (zero tokens):** the server runs a deterministic drift
+  pass on an interval (default 30 min): re-detection plus `reanchor.py`,
+  which remaps line-shift citations via difflib equal-block arithmetic
+  (content-identical by construction) and closes reports that were pure
+  bookkeeping. Most drift after an upstream pull is exactly this. Pause
+  with `CARTOGRAPH_DRIFT_AUTOFIX=0`.
+- **In-session:** reports that survive the mechanical pass genuinely
+  need judgment; the orientation injection lists them as capped work
+  items and the active session fixes them per the revision discipline.
+- **On demand:** `/auto-revise <repo>` still runs a headless LLM
+  resolution for deliberate bulk cases. You review the diff and accept
+  or revert.
+
+### 3b. Token economics (the diet)
+
+Cartograph runs with ZERO background LLM sessions by default. Everything
+autonomous is deterministic: drift re-anchoring, index rebuilds, and a
+nightly "curation agenda" (near-duplicate note pairs, decay candidates,
+hot-but-uncited files, open contradiction blocks) that computes WHAT
+needs judgment and hands it to the next interactive session. The
+orientation injection is dieted too: full bedrock once per session (and
+every 15th turn as compaction insurance), 300-line caps on injected
+bodies, session-level dedupe of already-surfaced notes, and a per-note
+grounding chip (`anchors N, rev DATE`) so trust tracks evidence. A
+retrieval-only eval (`scripts/eval/retrieval-eval.py`) scores the
+injection against golden questions with zero model calls. Every LLM
+spend that remains is a human pressing a button.
+
+### 3c. Learned rules (`heuristics.md`)
+
+Each repo carries `guides/<repo>/heuristics.md`: one-line operating
+rules sessions learn the hard way ("lint exactly what changed vs main",
+"never pip-install jax on this machine"). It is injected with the
+bedrock, and it has a hard line budget: over budget, a session must
+merge or evict before appending. This is the system-prompt-learning
+loop: the agent improves its own instructions, with human review.
 
 ### 4. Bedrock backfill (headless rebuilds)
 

@@ -65,6 +65,13 @@ except Exception:
   cg_log_error maintenance "lint-content hard failures: $lint_summary"
 }
 
+# ── b2. curation agenda — deterministic sleep-time analysis ─────────────
+# Near-dup pairs, decay candidates, coverage gaps, open contradictions.
+# Zero tokens; the orientation injection surfaces the results to the next
+# active session.
+python3 "$SCRIPTS/curation-agenda.py" >/dev/null 2>&1 \
+  || cg_log_error maintenance "curation-agenda.py failed"
+
 # ── c. anchor-coverage audit → enqueue anchor-fix tasks ─────────────────
 # Enqueued anchor tasks are drained by an LLM agent, so the enqueue is
 # gated OFF by default under the token diet: coverage gaps surface in

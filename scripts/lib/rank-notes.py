@@ -28,6 +28,23 @@ import sys
 
 SUMMARY_MAX = 220
 
+# Grounding chip: notes derive authority from code anchors, not from being
+# notes (Karpathy's provenance rule). Anchor count + last-verified date let
+# a session calibrate trust per note at a glance.
+ANCHOR_RE = re.compile(
+    r"[a-zA-Z0-9_./-]+\.(?:py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl):\d+"
+)
+REVISED_RE = re.compile(r"^last_revised:\s*(\S+)", re.MULTILINE)
+
+
+def grounding_chip(frontmatter: str, body: str) -> str:
+    anchors = len(set(ANCHOR_RE.findall(body)))
+    m = REVISED_RE.search(frontmatter)
+    revised = m.group(1).strip("'\"") if m else "?"
+    if anchors == 0:
+        return f"(UNANCHORED, rev {revised})"
+    return f"(anchors {anchors}, rev {revised})"
+
 
 def read_text(path: pathlib.Path) -> str:
     try:
@@ -208,7 +225,8 @@ def main() -> int:
         for score, rel, _path, frontmatter, body in items:
             title = title_of(frontmatter, body, rel)
             summary = summary_of(frontmatter, body)
-            out.write(f"  • {rel} — {title}")
+            chip = grounding_chip(frontmatter, body)
+            out.write(f"  • {rel} — {title} {chip}")
             if summary:
                 out.write(f" :: {summary}")
             out.write("\n")
@@ -216,12 +234,14 @@ def main() -> int:
         out.write("\n")
 
     if args.emit == "full":
-        for _score, rel, path, _fm, _body in top:
+        for _score, rel, path, fm, body in top:
+            out.write(f"[grounding] {rel} {grounding_chip(fm, body)}\n")
             emit_full(rel, read_text(path))
     elif args.emit == "menu":
         emit_menu(top)
     else:  # full1+menu
         first = top[0]
+        out.write(f"[grounding] {first[1]} {grounding_chip(first[3], first[4])}\n")
         emit_full(first[1], read_text(first[2]))
         emit_menu(top[1:])
 

@@ -1,0 +1,93 @@
+{
+  "jax": {
+    "questions": 5,
+    "group_coverage": 1.0,
+    "full_coverage": 5,
+    "per_question": {
+      "jax-01": "3/3",
+      "jax-02": "3/3",
+      "jax-03": "3/3",
+      "jax-04": "3/3",
+      "jax-05": "3/3"
+    }
+  },
+  "maxtext": {
+    "questions": 4,
+    "group_coverage": 0.0,
+    "full_coverage": 0,
+    "per_question": {
+      "maxtext-01": "0/3",
+      "maxtext-02": "0/3",
+      "maxtext-03": "0/4",
+      "maxtext-04": "0/3"
+    }
+  },
+  "orbax": {
+    "questions": 6,
+    "group_coverage": 1.0,
+    "full_coverage": 6,
+    "per_question": {
+      "orbax-01": "3/3",
+      "orbax-02": "3/3",
+      "orbax-03": "3/3",
+      "orbax-04": "3/3",
+      "orbax-05": "3/3",
+      "orbax-06": "3/3"
+    }
+  },
+  "qwix": {
+    "questions": 4,
+    "group_coverage": 0.0,
+    "full_coverage": 0,
+    "per_question": {
+      "qwix-01": "0/3",
+      "qwix-02": "0/3",
+      "qwix-03": "0/3",
+      "qwix-04": "0/3"
+    }
+  },
+  "sglang": {
+    "questions": 4,
+    "group_coverage": 0.833,
+    "full_coverage": 3,
+    "per_question": {
+      "sglang-01": "3/3",
+      "sglang-02": "1/3",
+      "sglang-03": "3/3",
+      "sglang-04": "3/3"
+    }
+  },
+  "tokamax": {
+    "questions": 4,
+    "group_coverage": 1.0,
+    "full_coverage": 4,
+    "per_question": {
+      "tokamax-01": "3/3",
+      "tokamax-02": "3/3",
+      "tokamax-03": "3/3",
+      "tokamax-04": "3/3"
+    }
+  },
+  "tunix": {
+    "questions": 4,
+    "group_coverage": 1.0,
+    "full_coverage": 4,
+    "per_question": {
+      "tunix-01": "3/3",
+      "tunix-02": "3/3",
+      "tunix-03": "3/3",
+      "tunix-04": "3/3"
+    }
+  },
+  "xla": {
+    "questions": 4,
+    "group_coverage": 0.917,
+    "full_coverage": 3,
+    "per_question": {
+      "xla-01": "3/3",
+      "xla-02": "3/3",
+      "xla-03": "3/3",
+      "xla-04": "2/3"
+    }
+  }
+}
