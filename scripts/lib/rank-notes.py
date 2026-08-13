@@ -32,7 +32,7 @@ SUMMARY_MAX = 220
 # notes (Karpathy's provenance rule). Anchor count + last-verified date let
 # a session calibrate trust per note at a glance.
 ANCHOR_RE = re.compile(
-    r"[a-zA-Z0-9_./-]+\.(?:py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl):\d+"
+    r"[a-zA-Z0-9_./-]+\.(?:py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl|yml|yaml):\d+"
 )
 REVISED_RE = re.compile(r"^last_revised:\s*(\S+)", re.MULTILINE)
 

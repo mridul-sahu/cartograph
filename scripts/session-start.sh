@@ -60,6 +60,17 @@ if [[ "${CARTOGRAPH_DRIFT_AUTOFIX:-1}" != "0" ]]; then
       > /dev/null 2>&1 < /dev/null &
     disown 2>/dev/null || true
     echo "session-start: deterministic drift pass for $_repo running in background (no tokens)"
+    # Snapshot the open reports so the Stop scorecard can grade this
+    # session (resolved vs carried) and the turn-1 contract can mark
+    # items carried over from the previous session.
+    _snap_dir="$CARTOGRAPH_ROOT/.cartograph/state"
+    mkdir -p "$_snap_dir"
+    _snap="$_snap_dir/drift-snapshot-$_repo"
+    [[ -f "$_snap" ]] && mv "$_snap" "$_snap.prev"
+    {
+      [[ -f "$CARTOGRAPH_ROOT/.drift-reports/$_repo.md" ]] && echo "__bedrock__"
+      ls "$CARTOGRAPH_ROOT/.drift-reports/topics/$_repo" 2>/dev/null
+    } > "$_snap" || true
   fi
 fi
 

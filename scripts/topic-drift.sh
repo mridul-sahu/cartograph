@@ -43,7 +43,7 @@ fi
 extract_anchors() {
   local file="$1"
   awk '/^---[[:space:]]*$/{c++; next} c>=2' "$file" 2>/dev/null \
-    | grep -oE '[a-zA-Z0-9_./-]+\.(py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl)(:[0-9]+)?' \
+    | grep -oE '[a-zA-Z0-9_./-]+\.(py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl|yml|yaml)(:[0-9]+)?' \
     | sort -u \
     | awk -F: 'NF==2 { print $1 "\t" $2 } NF==1 { print $1 "\t" }'
 }

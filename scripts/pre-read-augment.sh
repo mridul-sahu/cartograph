@@ -128,4 +128,27 @@ print("If any of the above contradicts the code you're about to read, revise it 
 print("</cartograph-pre-read>")
 PY
 
+# Piggyback curation: if the file being read is named in an OPEN drift
+# report, this is the cheapest possible moment to resolve that citation —
+# the code is about to be in context anyway. One line, only on a hit.
+repo=""
+case "$path" in
+  "$WORKSPACE_REAL"/*)
+    rel="${path#"$WORKSPACE_REAL"/}"
+    repo="${rel%%/*}"
+    ;;
+esac
+if [[ -n "$repo" ]]; then
+  drift_dir="$CARTOGRAPH_ROOT/.drift-reports/topics/$repo"
+  if [[ -d "$drift_dir" ]]; then
+    hit="$(grep -rlF "$basename" "$drift_dir" 2>/dev/null | head -1)"
+    if [[ -n "$hit" ]]; then
+      slug="$(basename "$hit" .md)"
+      echo "[drift-piggyback] An open report flags a citation of '$basename':"
+      echo "  .drift-reports/topics/$repo/$slug.md -> guides/$repo/topics/$slug.md"
+      echo "  You are about to read this code anyway — verify that claim while here."
+    fi
+  fi
+fi
+
 exit 0

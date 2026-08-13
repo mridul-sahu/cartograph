@@ -280,23 +280,46 @@ EOF
     fi
   fi
 
-  # Layer 1d: surviving per-topic drift = this session's curation queue.
-  # Mechanical re-anchoring (reanchor.py) has already run; what remains
-  # needs judgment, and no background agent will do it (token diet).
+  # Layer 1d: the session curation CONTRACT. Surviving drift needs
+  # judgment and no background agent will ever do it (token diet), so the
+  # session adopts a small, explicit slice as tasks. Items carried over
+  # from the previous session sort first so nothing silently ages.
   topics_drift_dir="$CARTOGRAPH_REAL/.drift-reports/topics/$REPO"
+  snap_prev="$CARTOGRAPH_REAL/.cartograph/state/drift-snapshot-$REPO.prev"
+  contract_items=()
+  if [[ -f "$CARTOGRAPH_REAL/.drift-reports/$REPO.md" ]]; then
+    contract_items+=("run /resolve-drift $REPO — bedrock is stale (everything pre-staged; usually minutes)")
+  fi
   if [[ -d "$topics_drift_dir" ]]; then
-    topic_reports="$(find "$topics_drift_dir" -maxdepth 1 -name '*.md' 2>/dev/null | sort)"
-    topic_report_count="$(printf '%s\n' "$topic_reports" | grep -c . 2>/dev/null || echo 0)"
-    if (( topic_report_count > 0 )); then
-      echo "[drift-work] $topic_report_count topic note(s) have citations needing judgment."
-      echo "  Fix the ones touching your task now, and at least one regardless (§4):"
-      printf '%s\n' "$topic_reports" | head -3 | while IFS= read -r r; do
-        [[ -n "$r" ]] && echo "  - .drift-reports/topics/$REPO/$(basename "$r") -> guides/$REPO/topics/$(basename "$r")"
-      done
-      (( topic_report_count > 3 )) && echo "  (+$((topic_report_count - 3)) more under .drift-reports/topics/$REPO/)"
-      echo "  Each: Read the report + cited regions; revise the note; bump last_revised."
-      echo
-    fi
+    topic_report_count="$(find "$topics_drift_dir" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)" || true
+    topic_report_count="${topic_report_count//[!0-9]/}"
+    carried=() fresh=()
+    while IFS= read -r r; do
+      [[ -n "$r" ]] || continue
+      base="$(basename "$r")"
+      if [[ -f "$snap_prev" ]] && grep -qxF "$base" "$snap_prev" 2>/dev/null; then
+        carried+=("revise guides/$REPO/topics/$base per .drift-reports/topics/$REPO/$base (carried from last session)")
+      else
+        fresh+=("revise guides/$REPO/topics/$base per .drift-reports/topics/$REPO/$base")
+      fi
+    done < <(find "$topics_drift_dir" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+    for item in ${carried[@]+"${carried[@]:0:2}"} ${fresh[@]+"${fresh[@]:0:2}"}; do
+      [[ -n "$item" ]] || continue
+      (( ${#contract_items[@]} >= 3 )) && break
+      contract_items+=("$item")
+    done
+  fi
+  if (( ${#contract_items[@]} > 0 )); then
+    echo "[curation-contract] Adopt these into your task list NOW (TaskCreate) and"
+    echo "  complete AT LEAST ONE before session end. The Stop scorecard grades this."
+    i=1
+    for item in ${contract_items[@]+"${contract_items[@]}"}; do
+      echo "  $i. $item"
+      i=$((i + 1))
+    done
+    [[ -n "${topic_report_count:-}" ]] && (( ${topic_report_count:-0} > 2 )) \
+      && echo "  (full queue: ${topic_report_count} reports under .drift-reports/topics/$REPO/)"
+    echo
   fi
 
   # Layer 1e: curation agenda for this repo (full turns only) — the

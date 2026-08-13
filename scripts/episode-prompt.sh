@@ -138,6 +138,34 @@ if (( edits > 0 )); then
     draft_mark="⚠"
     draft_note="    review at /console/review/ — auto-draft ≠ curated."
   fi
+  # Curation-contract grade: compare the drift reports open at session
+  # start (snapshot from session-start.sh) with what is open now. A
+  # report gone from the snapshot was resolved this session; the rest
+  # carry to the next session's contract.
+  drift_resolved=0
+  drift_carried=0
+  drift_snap="$CARTOGRAPH_ROOT/.cartograph/state/drift-snapshot-$REPO"
+  if [[ -f "$drift_snap" ]]; then
+    while IFS= read -r entry; do
+      [[ -n "$entry" ]] || continue
+      if [[ "$entry" == "__bedrock__" ]]; then
+        open_now="$CARTOGRAPH_ROOT/.drift-reports/$REPO.md"
+      else
+        open_now="$CARTOGRAPH_ROOT/.drift-reports/topics/$REPO/$entry"
+      fi
+      if [[ -f "$open_now" ]]; then
+        drift_carried=$((drift_carried + 1))
+      else
+        drift_resolved=$((drift_resolved + 1))
+      fi
+    done < "$drift_snap"
+  fi
+  drift_mark="✓"
+  drift_note=""
+  if (( drift_carried > 0 && drift_resolved == 0 )); then
+    drift_mark="⚠"
+    drift_note="    contract unmet — resolve at least one next session (they carry over)."
+  fi
   cat <<EOF
 [cartograph-stop-hook] · ${today} discipline scorecard
   ✓ edits this session              ${edits}
@@ -147,6 +175,8 @@ ${whatknows_note}
 ${rev_note}
   ${draft_mark} unblessed auto-drafted episodes  ${unblessed_auto_drafts}
 ${draft_note}
+  ${drift_mark} curation contract               resolved ${drift_resolved}, carried ${drift_carried}
+${drift_note}
 Any ✗ or ⚠ row is work owed before the next session.
 EOF
 fi

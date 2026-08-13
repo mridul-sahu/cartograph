@@ -48,7 +48,7 @@ DRIFT_REPO = ROOT / ".drift-reports"
 
 # Mirrors topic-drift.sh's extractor: path.ext:NNN with a code extension.
 ANCHOR_RE = re.compile(
-    r"([a-zA-Z0-9_./-]+\.(?:py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl)):(\d+)(?!\d)"
+    r"([a-zA-Z0-9_./-]+\.(?:py|pyi|cc|cpp|h|hh|hpp|c|ts|tsx|js|go|rs|bzl|yml|yaml)):(\d+)(?!\d)"
 )
 FM_RE = re.compile(r"^---\s*$")
 

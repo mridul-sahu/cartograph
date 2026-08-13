@@ -109,6 +109,10 @@
           {
             "type": "command",
             "command": "bash $CLAUDE_PROJECT_DIR/scripts/normalize-note-frontmatter.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/promote-nudge.sh"
           }
         ]
       },
