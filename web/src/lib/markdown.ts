@@ -107,6 +107,42 @@ export async function renderCodeBlock(code: string, lang: string): Promise<strin
   return `<div class="ch-codeblock" data-lang="${normLang}">${lightHtml}${darkHtml}</div>\n`;
 }
 
+// Content-authored markdown links point at repo files (`guides/<r>/topics/x.md`,
+// `./sibling.md`); the site serves routes. Map the known content shapes to
+// their routes so cross-references work in the browser exactly as they do for
+// a session reading the files. Unknown shapes pass through untouched.
+export function rewriteContentHref(href: string): string {
+  if (!href || /^(https?:|mailto:|data:|#|\/)/.test(href)) return href;
+  if (!href.endsWith('.md')) return href;
+  // Strip any ./ and ../ prefixes; content cross-refs are repo-relative in
+  // spirit even when written relative to the note's own directory.
+  const stripped = href.replace(/^(\.\.?\/)+/, '');
+  let m = /^guides\/([^/]+)\/topics\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/repo/${m[1]}/topics/${m[2]}/`;
+  m = /^guides\/([^/]+)\/(overview|architecture|conventions)\.md$/.exec(stripped);
+  if (m) return `/repo/${m[1]}/bedrock/${m[2]}/`;
+  if (stripped === 'guides/seams.md' || stripped === 'seams.md') return '/seams/';
+  m = /^([a-z0-9_-]+)\/topics\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/repo/${m[1]}/topics/${m[2]}/`;
+  m = /^episodes\/\d{4}-\d{2}\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/episodes/${m[1]}/`;
+  m = /^research\/([^/]+)\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/research/${m[1]}/${m[2]}/`;
+  m = /^papers\/([^/]+)\/([^/]+)\/notes\.md$/.exec(stripped);
+  if (m) return `/papers/${m[1]}/${m[2]}/`;
+  m = /^(?:learn\/)?walkthroughs\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/walkthroughs/${m[1]}/`;
+  m = /^(?:learn\/)?ramp-up\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/ramp-up/${m[1]}/`;
+  m = /^(?:learn\/)?drafts\/([^/]+)\.md$/.exec(stripped);
+  if (m) return `/drafts/${m[1]}/`;
+  // Bare same-directory sibling (`x.md`, `./x.md` after stripping): pages are
+  // directory-index routes, so the sibling lives one level up.
+  m = /^([^/]+)\.md$/.exec(stripped);
+  if (m) return `../${m[1]}/`;
+  return href;
+}
+
 export async function renderMarkdown(body: string): Promise<RenderResult> {
   const headings: Heading[] = [];
   const usedIds = new Set<string>();
@@ -119,6 +155,13 @@ export async function renderMarkdown(body: string): Promise<RenderResult> {
   let blockCounter = 0;
 
   const renderer = new marked.Renderer();
+
+  renderer.link = function (this: InstanceType<typeof marked.Renderer>, { href, title, tokens }) {
+    const text = this.parser.parseInline(tokens);
+    const target = rewriteContentHref(href || '');
+    const titleAttr = title ? ` title="${title}"` : '';
+    return `<a href="${target}"${titleAttr}>${text}</a>`;
+  };
 
   renderer.heading = ({ tokens, depth }) => {
     const text = marked.parseInline(

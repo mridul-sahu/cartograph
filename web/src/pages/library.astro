@@ -57,6 +57,7 @@ function walkRepoDir(kind: Kind, baseDir: string, hrefPrefix: string): Entry[] {
   const out: Entry[] = [];
   if (!existsSync(baseDir)) return out;
   for (const repo of readdirSync(baseDir)) {
+    if (repo.startsWith('_')) continue; // shared kits (designs/_kit) are not content
     const repoDir = join(baseDir, repo);
     if (!statSync(repoDir).isDirectory()) continue;
     for (const entry of readdirSync(repoDir)) {

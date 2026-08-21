@@ -21,6 +21,9 @@ interface Props {
   // setup. Opening it (?workspace=) gives a multi-root IDE — the fork AND
   // the setup folder side by side. Null → single-root ?folder=.
   setupWorkspace?: string | null;
+  // Whether learn/ramp-up/<repo>.md exists (baked at build time); gates
+  // the ramp-up link so repos without one don't link a 404.
+  hasRampUp?: boolean;
 }
 
 interface RepoStatus {
@@ -97,6 +100,7 @@ function buildCodeServerUrl(
 
 export default function IdeShell({
   repo,
+  hasRampUp = false,
   workspacePath,
   codeServerOrigin,
   setupWorkspace = null,
@@ -480,16 +484,18 @@ export default function IdeShell({
                   repo dashboard ↗
                 </a>
               </li>
-              <li>
-                <a
-                  href={`/ramp-up/${repo}/`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted hover:text-accent"
-                >
-                  ramp-up ↗
-                </a>
-              </li>
+              {hasRampUp && (
+                <li>
+                  <a
+                    href={`/ramp-up/${repo}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted hover:text-accent"
+                  >
+                    ramp-up ↗
+                  </a>
+                </li>
+              )}
               <li>
                 <a
                   href="/walkthroughs/"

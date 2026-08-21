@@ -29,6 +29,7 @@ const setupWorkspaceFile = join(
   'ide.code-workspace',
 );
 const setupWorkspace = existsSync(setupWorkspaceFile) ? setupWorkspaceFile : null;
+const hasRampUp = existsSync(join(process.cwd(), '..', 'learn', 'ramp-up', `${repo}.md`));
 ---
 
 <Base
@@ -40,6 +41,7 @@ const setupWorkspace = existsSync(setupWorkspaceFile) ? setupWorkspaceFile : nul
     workspacePath={workspacePath}
     codeServerOrigin={codeServerOrigin}
     setupWorkspace={setupWorkspace}
+    hasRampUp={hasRampUp}
     client:load
   />
 </Base>
