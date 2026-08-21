@@ -122,7 +122,6 @@ const next = idx < LAYERS.length - 1 ? LAYERS[idx + 1] : null;
       <ContentActions
         kind="bedrock"
         repo={repo}
-        layer={layer}
         filePath={`guides/${repo}/${layer}.md`}
         client:load
       />

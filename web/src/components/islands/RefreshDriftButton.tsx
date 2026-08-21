@@ -1,7 +1,7 @@
 // RefreshDriftButton — UI trigger for `scripts/repo-refresh.sh <repo>`:
-// pull upstream, re-detect drift, drain the open reports with headless
-// agents. POSTs to /api/repo-refresh/<repo>, then polls
-// GET /api/job/refresh/<repo>/all (drift-fix.sh status protocol). On mount
+// pull upstream, re-detect drift, run the deterministic drain over the open
+// reports (git + python, no tokens). POSTs to /api/repo-refresh/<repo>,
+// then polls GET /api/job/refresh/<repo>/all for status. On mount
 // it adopts an already-running refresh (page reload, session-start kick, or
 // a CLI run) so the in-progress state is never invisible.
 import { useState, useEffect, useCallback } from 'react';

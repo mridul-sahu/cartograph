@@ -18,12 +18,12 @@ time you open it.
 │    cartograph injects bedrock + topic notes + episodes + research        │
 │    that match what you're working on,                                    │
 │  every session you finish →                                              │
-│    cartograph captures what was learned, drafts an episode,              │
-│    flags topics whose code has drifted past them,                        │
+│    cartograph captures what happened, reminds you to write the           │
+│    episode, flags topics whose code has drifted past them,               │
 │  every three episodes sharing a tag →                                    │
 │    cartograph asks you to promote them into a topic note,                │
 │  every blessed topic →                                                   │
-│    folds back into bedrock during curation passes.                       │
+│    you fold back into bedrock with a one-line reference.                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,10 +61,10 @@ in place when the code drifts past it.
 
 | Tool | What it does | What cartograph adds |
 |---|---|---|
-| **`CLAUDE.md`** alone | One static file per repo with conventions and a discipline reminder | Per-turn context selection (top-3 topics + episodes + research by prompt overlap), per-file reverse index, drift detection against upstream, the auto-promotion loop |
+| **`CLAUDE.md`** alone | One static file per repo with conventions and a discipline reminder | Per-turn context selection (top-3 topics + episodes + research by prompt overlap), per-file reverse index, drift detection against upstream, the promotion loop |
 | **Aider** / **Continue** / **Cursor** memory | In-app "memories" or "rules" — flat, often per-chat, no structure across sessions | Layered structure (bedrock → topics → episodes), automated promotion from chats to durable notes, citation-anchored drift reports, a separate UI for browsing/curating |
 | **Embedding search** over a codebase (Sourcegraph Cody, llamaindex, etc.) | Retrieves chunks by semantic similarity | Hand-curated notes ranked above raw chunks; understanding that compounds across sessions instead of resetting each query; per-file index that maps code paths to the notes citing them |
-| **Project wiki** / **Notion** / **Obsidian** | A place to write notes | The notes are auto-injected by hooks at every prompt; freshness is tracked against upstream commits; promotion + revision are mechanized via slash commands and `claude -p` |
+| **Project wiki** / **Notion** / **Obsidian** | A place to write notes | The notes are auto-injected by hooks at every prompt; freshness is tracked against upstream commits; promotion + revision run as in-session slash commands |
 | **`pre-commit`** / **`husky`** | Per-commit hooks | A parallel layer: per-session, per-prompt, per-edit hooks that capture *what was learned*, not just *what was changed* |
 
 Cartograph is **not** a replacement for any of these — it sits underneath
@@ -102,10 +102,10 @@ Ordered from "carefully shaped" to "loose drafts":
 
 | Layer | Path | What it holds | Lifecycle |
 |---|---|---|---|
-| **Bedrock** | `guides/<repo>/{overview,architecture,conventions}.md` | The canonical "what this codebase is" doc for each tracked repo | Hand-curated. Rebuilt headlessly via `just backfill <repo>` when upstream drifts |
+| **Bedrock** | `guides/<repo>/{overview,architecture,conventions}.md` | The canonical "what this codebase is" doc for each tracked repo | Hand-curated. Rebuilt in-session via `/backfill <repo>` when upstream drifts |
 | **Topic notes** | `guides/<repo>/topics/<tag>.md` | Distilled understanding of a subsystem, gotcha, or pattern | Promoted from ≥3 same-tag episodes. Revised in place when code disagrees |
-| **Episodes** | `episodes/YYYY-MM/*.md` | Per-session worknotes: task, files touched, insight | Auto-drafted by the Stop hook. Reviewed via the inbox |
-| **Research / Papers** | `research/<repo>/*.md`, `papers/<repo>/<slug>/notes.md` | External material — blog posts, RFCs, papers, comparisons | Manual via `/research` / `/paper`; auto-drafted when a session used WebFetch / WebSearch |
+| **Episodes** | `episodes/YYYY-MM/*.md` | Per-session worknotes: task, files touched, insight | Written by the session (the Stop hook reminds). Reviewed via the inbox |
+| **Research / Papers** | `research/<repo>/*.md`, `papers/<repo>/<slug>/notes.md` | External material — blog posts, RFCs, papers, comparisons | Manual via `/research` / `/paper`; the Stop hook reminds when a session used WebFetch / WebSearch and filed nothing |
 | **Seams** | `guides/seams.md` | Cross-repo edges ("one repo lowers into another via a named entry point") | Appended via `/seam` |
 | **Proposals** | `proposals/<repo>/<slug>.md` | Investment-cased build plans — what to build next, grounded in gap research + papers + ecosystem trends | A phased lifecycle (`gap-analysis → deep-dive → final → proposal-docx → design → implement`); nest as an **umbrella + sub-proposals**; formalized into a `.docx` via `/proposal-final-draft` |
 
@@ -120,23 +120,25 @@ You don't think about it; it just runs.
 
 | Hook event | Hooks fired | What happens |
 |---|---|---|
-| **SessionStart** | `session-log.sh start` · `upstream-sync.sh` · `digest.sh` · `auto-promote.sh` · `build-file-index.py` · `build-search-index.py` · `anchor-coverage.py` · `diary.sh --if-stale` | Opens a session log. Fetches upstream and writes drift reports. Surfaces promotion candidates. Surfaces ≥3 same-tag episodes as `/promote` candidates (headless auto-promotion ships off by default). Rebuilds the file reverse-index and BM25 search index. Audits anchor coverage. Writes today's diary entry. |
+| **SessionStart** | `session-log.sh start` · serve self-heal · per-repo drift kick · digest cache | Opens a session log, repairs the daemon if it's down, kicks the deterministic drift pass for the current fork, and surfaces ≥3 same-tag episodes as `/promote` candidates from a daemon-precomputed cache. Starts in ~0.2s; the heavy work (upstream fetch, index rebuilds, diary, anchor audit) lives in the serve daemon's loops. |
 | **UserPromptSubmit** | `inject-context.sh` | Detects scope from `cwd`; injects bedrock + seams + top-3 topics + top-3 episodes + top-3 research notes ranked by keyword overlap + BM25 rerank. **Claude sees this before every turn.** |
 | **PreToolUse** (Read / Edit) | `pre-read-augment.sh` · `pre-edit-augment.sh` | Before any `Read`, injects every cartograph note citing that file path. Before any `Edit` of a topic note, fetches its drift report. |
-| **PostToolUse** (Edit / Write) | `token-check.sh` · `session-log.sh touch` · `post-edit-topic-mark.sh` · `normalize-note-frontmatter.sh` | Scans new content for forbidden identity tokens. Marks edited topics for re-review. Backfills missing frontmatter fields. |
-| **Stop** | `episode-prompt.sh` · `usage-audit.sh` · `session-log.sh stop` | Reminds Claude to write an episode if anything was learned. Background auto-drafting of episodes / research notes ships off by default (token diet); the reminder tells the session to write its own. |
+| **PostToolUse** (Edit / Write) | `post-edit.sh` (dispatcher: token-check, session-log touch, topic re-review mark, frontmatter normalize) | Scans new content for forbidden identity tokens. Marks edited topics for re-review. Backfills missing frontmatter fields. |
+| **Stop** | `session-stop.sh` (dispatcher: episode reminder, usage audit, note-usage attribution, session-log stop) | Reminds Claude to write an episode if anything was learned. There is no background auto-drafting; the reminder tells the session to write its own. |
 
 The result: orientation injects context, you do the work, hooks capture
 what happened, slash commands let you author or revise, the local UI lets
 you browse. **Nothing rots quietly** — drift surfaces, episodes promote,
 topics revise.
 
-### Three MCP tools (mid-conversation reach)
+### Five MCP tools (mid-conversation reach, from any session)
 
-If you opt in via `.mcp.json`, the cartograph MCP server exposes three
-tools Claude can call mid-turn — not via slash command, just as part of
-the model's normal reasoning. Each is deliberately read-only; writes
-still go through the slash commands.
+The cartograph MCP server ships wired via `.mcp.json`; register it at
+user scope (`claude mcp add -s user`) and every Claude session on the
+machine can reach the corpus — query it, pull a repo's bedrock, and
+capture episodes or research notes from external projects
+(`cartograph_bedrock`, `cartograph_capture`). Captures enter the review
+queue with provenance; the read tools stay the model's mid-turn reach.
 
 **`cartograph_search(query, repo?, layer?, k=10)`** — BM25 retrieval
 across every layer. Call before grepping.
@@ -268,32 +270,31 @@ for the eval harness — see feature 12).
 ### 2. The compounding loop (episodes → topics → bedrock)
 
 Episodes are cheap: write one whenever a session produces a durable
-insight. The Stop hook reminds you. (Background auto-drafting via
-`claude -p` exists but ships OFF by default: under the token-diet
-architecture the active session, which already holds the context, writes
-its own notes. Opt back in with `CARTOGRAPH_AUTO_EPISODE=1`.)
+insight. The Stop hook reminds you. (There is no background drafting:
+the active session, which already holds the context, writes its own
+notes.)
 
 ```
 You write 3+ episodes tagged `pjit-axes` over a few weeks.
-   ↓ next SessionStart
-auto-promote.sh sees 3 same-tag episodes not yet distilled.
-   ↓ claude -p drafts a topic note
-guides/jax/topics/pjit-axes.md is created with distilled_from: [...].
-   ↓ you review, edit, set reviewed_by_human: 2026-05-27
-   ↓ next curation pass
-fold-topic-to-bedrock.sh folds the topic into architecture.md
-   in the appropriate section.
+   ↓ the moment the third lands (or next SessionStart)
+the distillation contract fires; the session distills them itself:
+   merge into an existing topic if one covers the ground, else create
+guides/jax/topics/pjit-axes.md with distilled_from: [...] and Related links.
+   ↓ same session, immediately
+the topic folds into architecture.md (1-3 sentence pointer),
+   stamping folded_into_bedrock. Distilled episodes retire from search.
+   ↓ your only lever
+veto with rejected: true if a note should stop flowing.
 ```
 
-The auto-drafted output has `auto_drafted: true` and shows up in
-`/queue` and the inbox UI. **Default-approve semantics:** anything not
+Drafted output shows up in `/queue` and the inbox UI. **Veto-only semantics:** anything not
 explicitly `rejected: true` is eligible for further promotion. You opt
 out, not in.
 
 ### 3. Drift detection + auto-revision
 
 Every bedrock file records `backfilled_from_sha:` — the upstream sha it
-was written against. SessionStart fetches upstream; `drift-check.sh`
+was written against. The serve daemon fetches upstream every 6 hours; `drift-check.sh`
 compares the recorded sha to the current tip; if upstream moved,
 `.drift-reports/<repo>.md` is written and the orientation hook surfaces
 it every turn until the drift is closed.
@@ -314,9 +315,8 @@ Three ways drift gets closed:
 - **In-session:** reports that survive the mechanical pass genuinely
   need judgment; the orientation injection lists them as capped work
   items and the active session fixes them per the revision discipline.
-- **On demand:** `/auto-revise <repo>` still runs a headless LLM
-  resolution for deliberate bulk cases. You review the diff and accept
-  or revert.
+- **Structural drift** (many subsystems moved): run `/backfill <repo>`
+  in a session and review the diff.
 
 ### 3b. Token economics (the diet)
 
@@ -342,19 +342,17 @@ bedrock, and it has a hard line budget: over budget, a session must
 merge or evict before appending. This is the system-prompt-learning
 loop: the agent improves its own instructions, with human review.
 
-### 4. Bedrock backfill (headless rebuilds)
+### 4. Bedrock backfill (in-session rebuilds)
 
-```bash
-just backfill <repo>
+```
+/backfill <repo>
 ```
 
-Invokes Claude Code headlessly with the bedrock quality contract
-(`docs/quality-bar.md` — required headings, word-count floors, file:line
-citation density, forbidden tokens) and rewrites all three bedrock files
-against the current upstream tip. Takes 20–60 minutes for a non-trivial
-repo; runs in the background. Progress visible at
-`http://localhost:47777/repo/<repo>/` or by tailing
-`.backfill-log/*-<repo>.log`.
+Run inside a Claude Code session: it re-explores the fork against the
+bedrock quality contract (`docs/quality-bar.md` — required headings,
+word-count floors, file:line citation density, forbidden tokens) and
+rewrites the bedrock files against the current upstream tip. You watch
+and steer it live instead of tailing a background log.
 
 For repos > 500K LOC (XLA-scale), the prompt uses a subsystem-first
 approach: cover 1–2 subsystems per session rather than the whole tree.
@@ -394,7 +392,7 @@ for the human-shaped views — what slash commands don't cover.
   ramp-ups, all browsable
 - **Episodes** — timeline view with filters
 - **Seams** — interactive graph of cross-repo edges (React Flow)
-- **Console** — the review queue: every auto-drafted note awaiting a
+- **Console** — the review queue: every drafted note awaiting a
   human thumbs-up
 - **Console / Inbox** — auto-detected promotion candidates, drift
   reports needing attention, in-flight leases
@@ -498,7 +496,7 @@ formal docx once it's built.
 |---|---|
 | **Orientation** | `/whatknows <path>` — reverse index for a file • `/cite <symbol>` — grep across layers • `/find <natural query>` — BM25 retrieval • `/queue` — review queue • `/orient` — re-inject for current cwd • `/freshness` — per-fork upstream age • `/metrics` — bedrock freshness, review ratio, drift count |
 | **Authoring** | `/episode <title>` • `/research <repo> <slug>` • `/paper <repo> <slug>` • `/topic <repo> <slug>` • `/draft <slug>` • `/walkthrough <slug>` • `/seam <a> <b>` • `/pin <path>` |
-| **Curation** | `/revise <topic>` — with diff pre-staged • `/promote <tag>` — episodes → topic • `/auto-revise <topic>` — headless drift fix • `/backfill <repo>` — full bedrock rebuild |
+| **Curation** | `/revise <topic>` — with diff pre-staged • `/promote <tag>` — episodes → topic • `/backfill <repo>` — full bedrock rebuild |
 | **Research → proposals** | `/gap-scan <repo> <slug> <q>` — ecosystem gap analysis → backlog • `/analyze-paper <repo> <slug> <url>` — paper → implementable note • `/propose <repo\|new> <slug> <theme>` — investment-cased proposal • `/proposal-final-draft <repo> <slug>` — formal proposal docx |
 | **Stacked PRs** | `/stack` • `/stack-new` • `/stack-pr` • `/stack-submit` • `/stack-restack` • `/stack-sync` |
 | **Hygiene** | `/doctor` — verify all forks • `/lint` — content quality bar |
@@ -516,11 +514,8 @@ A few highlights:
 - `GET /api/repo/{repo}/most-cited` — files ranked by citation count
   across bedrock + topics + episodes
 - `GET /api/drift/{repo}` — current drift state
-- `POST /api/backfill/{repo}` — kick off a headless backfill
-- `POST /api/auto-revise/{repo}` — kick off headless drift-fix for one
-  topic; `/all` for everything drifted
-- `POST /api/promote/{tag}` — promote ≥3 same-tag episodes to a topic
-- `GET /api/queue` — the review queue (auto-drafted, drifted, in-flight)
+- `GET /api/promote-candidates` — tags ready for an in-session /promote
+- `GET /api/queue` — the review queue (pending drafts, drifted, flagged)
 - `GET /api/errors` — the chassis error feed (tail of `errors.log`)
 - `GET /api/injection-cost` — per-repo bedrock token estimates + budget warns
 - `POST /api/topic/{repo}/{slug}/touch` — bump `last_revised` on a stale topic
@@ -546,26 +541,20 @@ mechanisms keep cartograph honest:
   `Read` of the note (or a file it cites) marks it *used*, which boosts its
   future ranking. Notes injected repeatedly and never used sink. Per-session
   records land in `usage-log.jsonl`.
-- **Central error feed**: chassis failures (publish push, curation drains,
-  enqueues) append to `.cartograph/errors.log` and surface on the console.
-  Curation drains account per task — failed tasks stay queued and retry
-  instead of vanishing with their batch.
-- **Auto-review + bloat control**: notes awaiting review are judged in
-  capped nightly batches (≤12/scan, ONE headless agent at a time) that
-  spot-check anchors against the code. Approves leave the review queue
-  silently; confident defects get `rejected: true`; near-duplicate
-  episodes get `superseded_by`. Rejected/superseded notes drop out of
-  the BM25 corpus and injection menus — files are never deleted. Only
-  contested calls reach the human, pre-annotated with verdict + reason;
-  editing a note voids its opinion and re-enters review.
+- **Central error feed**: chassis failures (publish push, hook steps,
+  nightly maintenance) append to `.cartograph/errors.log` and surface on
+  the console.
+- **Review + bloat control**: notes awaiting review are approved or
+  rejected by the human in the review UI. `rejected: true` and
+  `superseded_by` drop a note out of the BM25 corpus and injection
+  menus — files are never deleted.
 
 Operationally, `scripts/setup-launchd.sh` (macOS) puts the server under
-KeepAlive supervision and schedules a nightly maintenance pass — drift
-auto-revision, content lint, anchor-gap fixes, curation drain, session
-archival — so the compounding runs while you sleep. Drift doesn't wait
-for the night: the server's own drift loop resolves open reports on an
-interval throughout the day, so nightly maintenance is the backstop,
-not the only path.
+KeepAlive supervision; the daemon itself runs a daily maintenance pass —
+the deterministic drift drain, content lint, curation agenda,
+anchor-coverage audit, and session archival — plus a drift loop that
+re-anchors open reports on an interval throughout the day. Both are git
+and python only; anything needing judgment waits for a session.
 
 Supervision itself is drift-proof. Every start/restart routes through
 launchd when the agent is installed (`scripts/lib/serve-control.sh`), so
@@ -619,12 +608,9 @@ This:
    forbidden-token regex baked in).
 6. Drops a per-fork `CLAUDE.md` into `.git/info/exclude` (never
    committed; gives Claude the identity rule when working in that fork).
-7. Kicks off a headless bedrock backfill via `claude -p` in the
-   background.
 
-The bedrock build takes 20–60 minutes. Watch progress at
-`http://localhost:47777/repo/<repo>/` or tail the log under
-`.backfill-log/`.
+Then open a Claude Code session in `workspace/<repo>/` and run
+`/backfill <repo>` to build the bedrock, watching and steering it live.
 
 ### Open a Claude Code session
 
@@ -644,14 +630,14 @@ your first episode and your first promoted topic note — see
 + relevant topics + relevant episodes injected. You work. If you spot a
 topic note that contradicts the code you just read, you fix it in place
 — no permission asked. If you discover something durable, you write an
-episode at session end (`/episode <title>`) or let the Stop hook
-auto-draft one.
+episode at session end (`/episode <title>`; the Stop hook reminds).
 
-**Between sessions.** Episodes accumulate. The SessionStart hook
-surfaces promotion candidates ("3 episodes tagged `pjit-axes` aren't yet
-distilled; run `/promote pjit-axes`"). You promote — Claude drafts a
-topic from the episodes; you review at `/console/review/`. Topic notes
-that get blessed (`reviewed_by_human:` set) feed into future bedrock
+**Between sessions.** Episodes accumulate. When a tag crosses the
+threshold, the session itself distills them (dedup-first into an
+existing topic where one covers the ground) and folds the result into
+bedrock immediately — the distillation contract, no review gate. You
+veto with `rejected: true` when a note should stop flowing; blessed
+(`reviewed_by_human:`) stays as optional human signal that feeds future
 folds.
 
 **When upstream moves.** The drift checker writes a report under

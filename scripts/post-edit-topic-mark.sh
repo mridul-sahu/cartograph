@@ -6,10 +6,10 @@
 # .cartograph/state/topic-revisions-pending.json.
 #
 # The /api/queue endpoint surfaces these as a 4th queue kind alongside
-# bless / anchor / drift. The unified review surface at /console/review/
-# (BulkAll) picks them up and lets claude re-validate the cited claim:
-# read the diff between last_revised and now, decide whether the topic
-# still holds, revise or bump-only.
+# bless / anchor / drift, and the orientation injection flags them for
+# the active session to re-validate the cited claim: read the diff
+# between last_revised and now, decide whether the topic still holds,
+# revise or bump-only.
 #
 # This closes the §4 (revision discipline) feedback loop: today a topic
 # can drift silently when its cited file is edited mid-session and the

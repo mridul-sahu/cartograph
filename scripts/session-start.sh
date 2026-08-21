@@ -1,26 +1,25 @@
 #!/usr/bin/env bash
 # scripts/session-start.sh — SessionStart dispatcher.
 #
-# Runs the lightweight session-log start ALWAYS, then the heavy orientation /
-# index / curation steps ONLY for a real interactive session. A headless agent
-# (CARTOGRAPH_HEADLESS=1) skips all the heavy work — it needs no orientation and
-# must not re-run the file/search index builds. Those re-runs, fired by every
-# spawned agent's own SessionStart, were a big part of why the old swarm pegged
-# the CPU. Consolidating the eight separate SessionStart hooks behind one guard
-# is the "fewest builds" half of the rebuild.
+# Runs the lightweight session-log start ALWAYS, then a handful of cheap
+# per-session steps for a real interactive session. The heavy work moved to
+# the serve daemon (index rebuilds ride the content watcher, upstream fetch
+# runs on a 6h loop, diary/anchor audits ride the daily maintenance pass),
+# so a session starts in well under a second. A headless agent
+# (CARTOGRAPH_HEADLESS=1, the eval harness) skips even the cheap steps.
 
 set -uo pipefail
 
-# shellcheck source=lib/headless.sh
-source "$(dirname "$0")/lib/headless.sh"   # sets CARTOGRAPH_ROOT; cg_in_headless
 DIR="$(dirname "$0")"
+CARTOGRAPH_ROOT="${CARTOGRAPH_ROOT:-$(cd "$DIR/.." && pwd)}"
 
 # Lightweight, always: record this session so PostToolUse touches land in its
 # own log (and not a concurrent interactive session's).
 bash "$DIR/session-log.sh" start || true
 
-# Heavy steps: skip inside a headless agent or when spawns are disabled.
-if cg_in_headless || cg_headless_disabled; then
+# Heavy steps: skip inside a headless session (the eval harness sets the
+# marker so its claude -p runs don't rebuild indexes or kick drift).
+if [[ "${CARTOGRAPH_HEADLESS:-0}" == "1" ]]; then
   exit 0
 fi
 
@@ -30,20 +29,18 @@ fi
 # shellcheck source=lib/serve-control.sh
 source "$DIR/lib/serve-control.sh" 2>/dev/null && cg_serve_heal || true
 
-# Surface a stale nightly maintenance pass (machine asleep through the 03:30
-# slot, launchd agent unloaded, etc.) so a silently-not-running maintenance
-# is visible in the error feed instead of invisible.
+# Surface a stale maintenance pass (serve daemon down for days, loop
+# wedged) so a silently-not-running maintenance is visible in the error
+# feed instead of invisible.
 maint_log="$CARTOGRAPH_ROOT/.cartograph/maintenance.log"
 if [[ -f "$maint_log" ]]; then
   age_h="$(python3 -c "import os,time;print(int((time.time()-os.path.getmtime('$maint_log'))/3600))" 2>/dev/null || echo 0)"
   if (( age_h > 36 )); then
     source "$DIR/lib/errors.sh" 2>/dev/null \
-      && cg_log_error session-start "maintenance.log ${age_h}h stale — nightly pass may not be firing (launchctl print gui/\$(id -u)/com.cartograph.maintenance)" \
+      && cg_log_error session-start "maintenance.log ${age_h}h stale — the serve daemon's daily pass may not be firing (check .cartograph/logs/serve.err.log)" \
       || true
   fi
 fi
-
-"$DIR/upstream-sync.sh" || true
 
 # Stale-repo pass: starting a session inside a fork kicks the deterministic
 # drift pass (topic-drift re-detection + reanchor.py) detached in the
@@ -74,16 +71,9 @@ if [[ "${CARTOGRAPH_DRIFT_AUTOFIX:-1}" != "0" ]]; then
   fi
 fi
 
-bash "$DIR/digest.sh" || true
-bash "$DIR/auto-promote.sh" || true
-bash "$DIR/auto-review-scan.sh" || true
-# Validate frontmatter BEFORE the index builds — a malformed block makes a
-# note silently unretrievable; surface it instead.
-python3 "$DIR/validate-frontmatter.py" --root "$CARTOGRAPH_ROOT" \
-  --errors-log "$CARTOGRAPH_ROOT/.cartograph/errors.log" || true
-python3 "$DIR/build-file-index.py" --quiet || true
-python3 "$DIR/build-search-index.py" --quiet || true
-python3 "$DIR/anchor-coverage.py" >/dev/null || true
-bash "$DIR/diary.sh" --if-stale || true
+# Promotion-candidate digest: the daemon precomputes it on every content
+# change; fall back to a live run only when the cache is missing.
+cat "$CARTOGRAPH_ROOT/.cartograph/state/digest-cache" 2>/dev/null \
+  || bash "$DIR/digest.sh" || true
 
 exit 0

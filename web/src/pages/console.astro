@@ -41,31 +41,15 @@ function readTopicDriftReports() {
   return out;
 }
 
-function readDiaryEntries(limit = 7) {
-  const dir = join(ROOT, 'diary');
-  if (!existsSync(dir)) return [] as { date: string; path: string }[];
-  const out: { date: string; path: string }[] = [];
-  const months = readdirSync(dir).filter((d) => /^\d{4}-\d{2}$/.test(d)).sort().reverse();
-  for (const m of months) {
-    const files = readdirSync(join(dir, m)).filter((f) => f.endsWith('.md')).sort().reverse();
-    for (const f of files) {
-      out.push({ date: f.replace(/\.md$/, ''), path: `diary/${m}/${f}` });
-      if (out.length >= limit) return out;
-    }
-  }
-  return out;
-}
-
 const drift = readDriftReports();
 const topicDrift = readTopicDriftReports();
-const diary = readDiaryEntries();
 ---
 
 <Base title="console" breadcrumbs={[{ label: 'console' }]}>
   <section class="mb-6">
     <h1 class="text-3xl font-bold tracking-tight">Console</h1>
     <p class="mt-2 text-muted text-base max-w-2xl">
-      What the chassis is asking you to review — drift, promotion candidates, lint debt, recent diary entries.
+      What the chassis is asking you to review: drift, promotion candidates, lint debt, script errors.
       For repo state and upstream activity, see <a href="/" class="text-accent hover:underline">home</a>.
     </p>
   </section>
@@ -106,7 +90,7 @@ const diary = readDiaryEntries();
         <h3 class="text-xl font-bold tracking-tight leading-tight truncate">Promotion candidates</h3>
       </div>
       <div class="font-mono text-xs text-muted whitespace-nowrap flex-shrink-0">
-        ≥3 undistilled · auto-runs at SessionStart · <a href="/promotions/" class="text-accent hover:underline">history →</a>
+        ≥3 undistilled · auto-runs at SessionStart
       </div>
     </Fragment>
     <PromoteCandidates client:load />
@@ -124,20 +108,4 @@ const diary = readDiaryEntries();
     <ErrorsPanel client:load />
   </Card>
 
-  <Card eyebrow="07 / diary" title="Recent diary entries" right={`${diary.length}`} padded={false}>
-    {diary.length === 0 ? (
-      <p class="p-5 text-sm text-muted">No diary entries yet. <code>scripts/diary.sh</code> writes one once per day.</p>
-    ) : (
-      <ul class="divide-y divide-[var(--border-soft)]">
-        {diary.map((d, i) => (
-          <li class={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
-            <a href={`/diary/${d.date}/`} class="block px-5 py-2 hover:bg-[var(--surface-2)] flex items-center justify-between font-mono text-xs no-underline">
-              <span class="text-accent">{d.path}</span>
-              <span class="text-muted">{d.date}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    )}
-  </Card>
 </Base>

@@ -106,7 +106,7 @@ export default function DisciplineScorecard() {
                 return (
                   <tr key={s.slug} className={i % 2 === 0 ? 'bg-bg' : 'bg-[var(--surface-1)]'}>
                     <td className="px-3 py-1.5 truncate max-w-md">
-                      <a href={`/sessions/${s.slug}/`} className="text-accent hover:underline">{s.slug}</a>
+                      <span className="text-fg">{s.slug}</span>
                     </td>
                     <td className="px-3 py-1.5 text-right text-fg">{s.edits}</td>
                     <td className={`px-3 py-1.5 text-right ${s.cited_file_edits > 0 ? 'text-fg' : 'text-muted'}`}>{s.cited_file_edits}</td>

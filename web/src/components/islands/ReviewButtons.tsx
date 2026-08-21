@@ -134,7 +134,7 @@ export default function ReviewButtons(props: Props) {
           <textarea
             value={rejectNote}
             onChange={(e) => setRejectNote(e.target.value)}
-            placeholder="why is this wrong? (optional — feeds the revise-rejected agent)"
+            placeholder="why is this wrong? (stamped on the note for the revising session)"
             className="w-full border-2 border-border bg-bg p-2 font-mono text-xs"
             rows={3}
           />

@@ -148,14 +148,20 @@ EOF
   cat <<'EOF'
 
 [DISCIPLINE — read this on every turn]
-Cartograph compounds AUTOMATICALLY. The chassis already runs:
-  • SessionStart → session-log + drift-check + auto-promote (≥3 episodes
-                   on a tag → claude -p drafts a topic; reviewed topics
-                   → claude -p folds into bedrock)
-  • Stop → claude -p auto-drafts, in background: an episode (if ≥3 edits
-                   + none written) AND research/paper notes (if the session
-                   consulted external material — WebFetch/WebSearch)
-  • UserPromptSubmit → injects bedrock + topics + episodes + research
+Cartograph is a self-evolving knowledge base and YOU are its engine —
+nothing runs in the background. The deterministic chassis computes
+CONTRACTS; this session executes them as part of its work, no asking,
+no review gate (the human vetoes with rejected: true):
+  • distill — when the digest/post-edit signal says a tag crossed the
+    threshold, merge those episodes into an existing topic (dedup first)
+    or a new one, then fold a pointer into bedrock, this session
+  • ingest — when an ingestion report is injected, absorb what upstream
+    changed into the notes (not just re-verify citations)
+  • compact — when the curation agenda lists near-dups/decay/gaps,
+    resolve at least one this session; distilled episodes retire from
+    retrieval so the corpus shrinks as it improves
+  • capture — write the episode (≥3 edits) and research notes YOURSELF
+    before Stop; the Stop hook only reminds
 
 Your job in this session is to make cartograph BETTER, not just BIGGER.
 The hard rules:
@@ -324,8 +330,8 @@ EOF
 
   # Layer 1e: curation agenda for this repo (full turns only) — the
   # deterministic sleep-time analysis (near-dups, decay, coverage gaps,
-  # open contradictions). Judgment work for THIS session; nothing in the
-  # background will act on it.
+  # open contradictions). These are CONTRACTS for this session; nothing
+  # in the background will act on them.
   agenda="$CARTOGRAPH_REAL/.cartograph/state/curation-agenda.md"
   if (( bedrock_full )) && [[ -f "$agenda" ]]; then
     agenda_items="$(awk -v repo="## $REPO" '
@@ -334,7 +340,7 @@ EOF
       grab && /^- / { print }
     ' "$agenda" | head -3)"
     if [[ -n "$agenda_items" ]]; then
-      echo "[curation-agenda] top items for $REPO (full list: .cartograph/state/curation-agenda.md):"
+      echo "[curation-agenda] CONTRACT — resolve at least one of these this session (merge the near-dup, renew-or-supersede the decayed note, ingest the gap); full list: .cartograph/state/curation-agenda.md:"
       printf '%s\n' "$agenda_items" | sed 's/^/  /'
       echo
     fi

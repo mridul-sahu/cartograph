@@ -182,7 +182,7 @@ def audit(root: Path) -> dict[str, Any]:
 
     # Load the suppress list — (repo, slug) pairs and (repo, slug, file)
     # triples that claude has already evaluated as false positives via
-    # anchor-fix.sh's no-op verdict. The audit re-runs every session, so
+    # a prior in-session fix. The audit re-runs every session, so
     # without persistent suppression a no-op would just reappear.
     suppress_pairs: set[tuple[str, str]] = set()
     suppress_files: set[tuple[str, str, str]] = set()
@@ -257,11 +257,10 @@ def main(argv: list[str]) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
-    # Hand gaps off for fixing. scripts/curate.sh's enqueue validates `kind`
-    # against a fixed set (fold|promote|episode|research) that has no
-    # anchor-fix kind, so we can't enqueue there — instead emit a pending
-    # list a maintenance pass can consume (and clear it when no gaps remain
-    # so stale entries never get fixed twice).
+    # Hand gaps off for fixing: emit a pending list that /queue surfaces to
+    # the active session (and clear it when no gaps remain so stale entries
+    # never get fixed twice). Fixing is explicit in-session work;
+    # nothing consumes this automatically.
     pending_path = root / ".cartograph" / "state" / "anchor-gaps-pending.json"
     if result["total_gaps"] > 0:
         pending = {

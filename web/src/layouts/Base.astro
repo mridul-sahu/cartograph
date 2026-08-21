@@ -33,12 +33,11 @@ const primaryNav = [
   { href: '/',           label: 'home',     match: (p: string) => p === '/' },
   { href: '/prs/',       label: 'prs',      match: (p: string) => p.startsWith('/prs') },
   { href: '/repo/',      label: 'repos',    match: (p: string) => p.startsWith('/repo/') || p.startsWith('/browse/') || p.startsWith('/setups/') || p.startsWith('/ramp-up/') },
-  { href: '/episodes/',  label: 'episodes', match: (p: string) => p.startsWith('/episodes') || p.startsWith('/sessions') },
+  { href: '/episodes/',  label: 'episodes', match: (p: string) => p.startsWith('/episodes') },
   { href: '/library/',   label: 'library',  match: (p: string) => p.startsWith('/library') || p.startsWith('/designs') || p.startsWith('/papers') || p.startsWith('/research/') || p.startsWith('/walkthroughs') || p.startsWith('/drafts') },
   { href: '/proposals/', label: 'proposals', match: (p: string) => p.startsWith('/proposals') },
   { href: '/seams/',     label: 'seams',    match: (p: string) => p.startsWith('/seams') },
-  { href: '/promotions/', label: 'promotions', match: (p: string) => p.startsWith('/promotions') },
-  { href: '/console/',   label: 'console',  match: (p: string) => p.startsWith('/console') || p.startsWith('/status') || p.startsWith('/diary') || p.startsWith('/drift') },
+  { href: '/console/',   label: 'console',  match: (p: string) => p.startsWith('/console') || p.startsWith('/drift') },
   { href: '/about/',     label: 'about',    match: (p: string) => p.startsWith('/about') },
 ];
 

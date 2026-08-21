@@ -145,11 +145,25 @@ for repo_dir in "$GUIDES"/*/; do
     [[ -f "$file" ]] || continue
     total_files=$((total_files + 1))
 
+    # External-project bedrock (frontmatter `external: true`) is a
+    # lightweight single-file overview: no fork section/floor rules, but
+    # the word budget and forbidden-token checks still apply.
+    if [[ "$(fm_field "$file" external)" == "true" ]]; then
+      words="$(body_words "$file")"
+      if (( words > ${BEDROCK_MAX:-6000} )); then
+        issue "warn" "$file" "bedrock over word budget ($words > ${BEDROCK_MAX:-6000}); compact on the next fold (replace, don't append)"
+      fi
+      continue
+    fi
+
     # Word count.
     words="$(body_words "$file")"
     min="$(bedrock_min_for "$layer")"
     if (( words < min )); then
       issue "warn" "$file" "below word-count floor ($words < $min)"
+    fi
+    if (( words > ${BEDROCK_MAX:-6000} )); then
+      issue "warn" "$file" "bedrock over word budget ($words > ${BEDROCK_MAX:-6000}); compact on the next fold (replace, don't append)"
     fi
 
     # Required sections.
@@ -204,6 +218,9 @@ for repo_dir in "$GUIDES"/*/; do
     cites="$(citation_count "$file")"
     if (( cites < 3 )); then
       issue "warn" "$file" "topic note has <3 file:line citations ($cites)"
+    fi
+    if ! grep -qE 'guides/[a-z0-9_-]+/(topics/|overview|architecture|conventions)|seams\.md|episodes/20' "$file"; then
+      issue "warn" "$file" "no graph links (orphan); add a Related section linking sibling topics, seams, or the bedrock section it feeds"
     fi
 
     forbidden_scan "$file" "fail"

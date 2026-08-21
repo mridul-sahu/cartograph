@@ -14,8 +14,8 @@
 # ACTIVE session via the orientation injection (fix per CLAUDE.md §4).
 # Repo-level bedrock reports (.drift-reports/<repo>.md) are likewise
 # active-session work per §3b; the drain re-anchors bedrock citations but
-# never closes those reports itself. For a rare deliberate bulk LLM pass,
-# run scripts/auto-revise.sh / scripts/drift-fix.sh by hand.
+# never closes those reports itself; surviving reports are in-session
+# judgment work (CLAUDE.md §4).
 # Callers: serve.py's drift loop, session-start.sh, repo-refresh.sh,
 # maintenance.sh.
 

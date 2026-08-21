@@ -33,7 +33,7 @@ section() {
 # 1. Auto-drafted episodes awaiting review
 auto_drafted="$($Q layer=episode auto_drafted=true '!reviewed_by_human' '!rejected' --format paths 2>/dev/null)"
 
-# 2. Topics without reviewed_by_human (auto-promoted, awaiting fold)
+# 2. Topics without reviewed_by_human (promoted, awaiting bless + fold)
 unblessed_topics="$($Q layer=topic '!reviewed_by_human' '!rejected' --format paths 2>/dev/null)"
 
 # 3. Topics aged >TOPIC_AGE_DAYS

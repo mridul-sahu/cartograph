@@ -3,23 +3,21 @@
 // Renders a vertical column of action buttons appropriate for the content
 // type (bedrock / topic / episode / draft) the page is showing.
 //
-// Actions are intentionally cheap to ship: most either invoke an existing
-// API endpoint or open the underlying file in code-server in a new tab.
-// Heavy operations (re-backfill, promote-draft) get a Confirm step.
+// Actions are intentionally cheap to ship: each either invokes an existing
+// API endpoint or opens the underlying file in code-server in a new tab.
+// promote-draft (a file move) gets a Confirm step.
 //
 // Props:
 //   kind                 'bedrock' | 'topic' | 'episode' | 'draft'
 //   repo                 repo slug (always set except for cross-cutting content)
 //   slug                 e.g. "sharding-and-pjit" (topic) or "2026-05-22-...-jax-..." (episode)
 //   filePath             relative-to-cartograph file path (used for "open in editor")
-//   layer?               for bedrock: 'overview' | 'architecture' | 'conventions'
 import { useState } from 'react';
 import {
   motion,
   AnimatePresence,
   useReducedMotion,
 } from 'motion/react';
-import AskClaude from './AskClaude';
 
 type ContentKind = 'bedrock' | 'topic' | 'episode' | 'draft' | 'research' | 'paper';
 
@@ -27,7 +25,6 @@ interface Props {
   kind: ContentKind;
   repo?: string;
   slug?: string;
-  layer?: 'overview' | 'architecture' | 'conventions';
   filePath: string;
   codeServerOrigin?: string;
   cartographRoot?: string;
@@ -39,7 +36,6 @@ export default function ContentActions({
   kind,
   repo,
   slug,
-  layer,
   filePath,
   codeServerOrigin = 'http://localhost:47780',
   cartographRoot = '<cartograph-root>',
@@ -76,16 +72,8 @@ export default function ContentActions({
             hover={hover}
           />
 
-          {kind === 'bedrock' && repo && (
-            <RebackfillAction repo={repo} press={press} hover={hover} />
-          )}
-
           {kind === 'draft' && slug && (
             <PromoteDraftAction slug={slug} press={press} hover={hover} />
-          )}
-
-          {kind === 'topic' && repo && slug && (
-            <FoldIntoBedrockAction repo={repo} topic={slug} press={press} hover={hover} />
           )}
 
           {kind === 'episode' && (
@@ -108,38 +96,6 @@ export default function ContentActions({
             disabledNote="raw view: see git or open the file in editor"
           />
         </div>
-      </div>
-
-      <div className="border-t-2 border-border pt-4">
-        <AskClaude
-          kind={
-            kind === 'bedrock'
-              ? 'review-bedrock'
-              : kind === 'topic'
-              ? 'review-topic'
-              : kind === 'episode'
-              ? 'review-episode'
-              : kind === 'research'
-              ? 'review-research'
-              : kind === 'paper'
-              ? 'review-paper'
-              : 'review-draft'
-          }
-          repo={repo}
-          context={filePath}
-          title={`ask claude to review this ${kind}`}
-          placeholder={
-            kind === 'bedrock'
-              ? `e.g., "Does the ${layer ?? 'overview'} hold up against the current code?"`
-              : kind === 'topic'
-              ? `e.g., "Are the file:line citations still accurate?"`
-              : kind === 'episode'
-              ? `e.g., "Is this still relevant, or should it be superseded?"`
-              : kind === 'research'
-              ? `e.g., "Fact-check the comparison claims against current code."`
-              : `e.g., "Read the spine and tell me where the argument breaks down."`
-          }
-        />
       </div>
     </div>
   );
@@ -193,144 +149,6 @@ function ActionLink({
         </div>
       )}
     </motion.a>
-  );
-}
-
-function FoldIntoBedrockAction({
-  repo,
-  topic,
-  press,
-  hover,
-}: {
-  repo: string;
-  topic: string;
-  press: object;
-  hover: object;
-}) {
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [result, setResult] = useState<string | null>(null);
-
-  async function run() {
-    if (!confirm(
-      `Fold "${topic}" into ${repo} bedrock?\n\n` +
-      `Surgical update via claude -p: adds a 1–3 sentence reference under the most relevant bedrock section + bumps last_revised. The topic note itself is unchanged.\n\n` +
-      `Takes 1–3 minutes. Review the diff before committing.`
-    )) return;
-    setPhase('running');
-    try {
-      const res = await fetch(
-        `/api/topic/${repo}/${topic}/fold-into-bedrock`,
-        { method: 'POST' },
-      );
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setResult(data.detail ?? data.note ?? `exit ${data.exit_code ?? '?'}`);
-        setPhase('error');
-        return;
-      }
-      setResult(data.note ?? 'folded — review git diff');
-      setPhase('done');
-    } catch (e) {
-      setResult(String(e));
-      setPhase('error');
-    }
-  }
-
-  return (
-    <div className="block p-2 border-2 border-accent bg-bg shadow-brut-sm">
-      <div className="font-mono text-xs uppercase tracking-wider text-accent">
-        fold into {repo} bedrock
-      </div>
-      <div className="font-mono text-[10px] text-muted mt-0.5 mb-2">
-        surgical reference (not a rewrite) — when this topic's insight is
-        compelling enough to belong in bedrock
-      </div>
-      <motion.button
-        type="button"
-        onClick={run}
-        disabled={phase === 'running' || phase === 'done'}
-        whileHover={phase === 'running' || phase === 'done' ? {} : hover}
-        whileTap={phase === 'running' || phase === 'done' ? {} : press}
-        transition={{ duration: 0.1 }}
-        className="font-mono text-[11px] uppercase tracking-wider px-2 py-1 border-2 border-border bg-accent text-accent-fg disabled:opacity-50"
-      >
-        {phase === 'running' ? 'folding…' : phase === 'done' ? 'done' : 'fold'}
-      </motion.button>
-      <AnimatePresence>
-        {result && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mt-2 font-mono text-[10px] text-muted break-all"
-          >
-            {result}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function RebackfillAction({
-  repo,
-  press,
-  hover,
-}: {
-  repo: string;
-  press: object;
-  hover: object;
-}) {
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [result, setResult] = useState<string | null>(null);
-
-  async function run() {
-    setPhase('running');
-    try {
-      const res = await fetch(`/api/backfill/${repo}`, { method: 'POST' });
-      const data = await res.json();
-      setResult(
-        data.ok ? 'done — review git diff in editor' : `failed: ${data.note ?? ''}`,
-      );
-      setPhase('done');
-    } catch (e) {
-      setResult(String(e));
-      setPhase('error');
-    }
-  }
-
-  return (
-    <div className="block p-2 border-2 border-border bg-bg shadow-brut-sm">
-      <div className="font-mono text-xs uppercase tracking-wider">
-        re-backfill {repo} bedrock
-      </div>
-      <div className="font-mono text-[10px] text-muted mt-0.5 mb-2">
-        runs <code>claude -p</code> against docs/quality-bar.md, 1–3 min
-      </div>
-      <motion.button
-        type="button"
-        onClick={run}
-        disabled={phase === 'running'}
-        whileHover={phase === 'running' ? {} : hover}
-        whileTap={phase === 'running' ? {} : press}
-        transition={{ duration: 0.1 }}
-        className="font-mono text-[11px] uppercase tracking-wider px-2 py-1 border-2 border-border bg-accent text-accent-fg disabled:opacity-50"
-      >
-        {phase === 'running' ? 'running…' : 'run'}
-      </motion.button>
-      <AnimatePresence>
-        {phase !== 'idle' && phase !== 'running' && (
-          <motion.div
-            initial={{ opacity: 0, y: -2 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="mt-2 font-mono text-[10px] text-muted"
-          >
-            {result}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
   );
 }
 

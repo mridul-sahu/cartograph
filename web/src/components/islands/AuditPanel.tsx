@@ -4,8 +4,7 @@
 // build time and hands them in. From there this island talks to
 // `POST /api/topic/<repo>/<topic>/review`:
 //   approve  → stamps reviewed_by_human
-//   reject   → records the note, then a claude agent researches + fixes
-//              the topic per the note and resets it to pending re-review
+//   reject   → records the note; a later session revises per the note
 //   discard  → deletes the topic note for good
 //
 // Buttons use the brutalist press idiom; gestures gate on reduced-motion.
@@ -100,7 +99,7 @@ export default function AuditPanel({
         kind: 'ok',
         message:
           json.note ??
-          'rejected — claude is revising it per your note. reload in a few minutes to re-review.',
+          'rejected — revise it in a session (/revise); the review queue keeps it flagged.',
       });
     } catch (err) {
       setReviewed(prevReviewed);

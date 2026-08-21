@@ -12,7 +12,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { driftLevel, driftLabel, driftChipClass } from '~/lib/drift';
 import { timeAgo } from '~/lib/time';
-import AutoReviseButton from './AutoReviseButton';
 
 interface RepoStatus {
   name: string;
@@ -125,7 +124,7 @@ function ReadyView({
       />
 
       {driftedRepos.length > 0 && (
-        <div className="brutal-card p-5 flex items-center justify-between flex-wrap gap-3">
+        <div className="brutal-card p-5">
           <div>
             <div className="font-mono text-[11px] uppercase tracking-widest mb-1 text-muted">
               open drift
@@ -141,7 +140,6 @@ function ReadyView({
               ))}
             </div>
           </div>
-          <AutoReviseButton all />
         </div>
       )}
 
@@ -256,14 +254,11 @@ function RepoStatusCard({ repo, commits }: { repo: RepoStatus; commits: Commit[]
       <CommitList repo={repo.name} commits={commits} />
 
       {hasDrift && (
-        <>
-          <DriftExpander
-            repo={repo.name}
-            open={driftOpen}
-            onToggle={() => setDriftOpen((v) => !v)}
-          />
-          <AutoReviseButton repo={repo.name} />
-        </>
+        <DriftExpander
+          repo={repo.name}
+          open={driftOpen}
+          onToggle={() => setDriftOpen((v) => !v)}
+        />
       )}
     </article>
   );

@@ -104,10 +104,11 @@ import Card from '~/components/Card.astro';
       <li class="border-2 border-[var(--border-soft)] p-3">
         <div class="font-mono text-xs font-bold mb-1">SessionStart</div>
         <p class="text-sm text-muted">
-          Fetches upstream, opens drift reports if bedrock fell behind, rebuilds
-          the file-reverse-index + BM25 index, writes today's diary entry,
-          auto-promotes any tag with ≥3 undistilled episodes into a topic note,
-          and enqueues pending notes for capped auto-review.
+          Opens the session log, repairs the serve daemon if it's down, kicks
+          the per-repo drift pass, and prints /promote candidates from the
+          daemon's digest cache. Upstream fetch, index rebuilds, and the
+          diary run in the daemon's own loops, so a session starts in about
+          0.2s. Deterministic throughout; nothing spawns claude.
         </p>
       </li>
       <li class="border-2 border-[var(--border-soft)] p-3">
@@ -136,11 +137,12 @@ import Card from '~/components/Card.astro';
       <li class="border-2 border-[var(--border-soft)] p-3">
         <div class="font-mono text-xs font-bold mb-1">Stop</div>
         <p class="text-sm text-muted">
-          Auto-drafts an episode if the session touched ≥3 files but wrote
-          none. Audits chassis utilization and attributes usage back to every
-          injected note — a note counts as <em>used</em> when the session Read
-          it or a file it cites, and that record feeds the next session's
-          ranking. Commits + pushes any content the session wrote.
+          Reminds the session to write its own episode if it touched ≥3 files
+          but wrote none (nothing drafts in the background). Audits chassis
+          utilization and attributes usage back to every injected note; a note
+          counts as <em>used</em> when the session Read it or a file it cites,
+          and that record feeds the next session's ranking. Commits + pushes
+          any content the session wrote.
         </p>
       </li>
       <li class="border-2 border-[var(--border-soft)] p-3">
@@ -153,127 +155,57 @@ import Card from '~/components/Card.astro';
     </ul>
   </Card>
 
-  <Card eyebrow="02b / auto-promotion" title="The two cascades that make the layers compound">
+  <Card eyebrow="02b / promotion" title="How the layers compound (explicitly)">
     <p class="text-sm text-muted mb-4 max-w-3xl">
-      <code>scripts/auto-promote.sh</code> runs in the background from
-      <code>SessionStart</code> (155 lines, bash 3.2-compatible — macOS default).
-      Two cascades, both <em>default-approve</em>: eligible work fires automatically;
-      the human <em>rejects</em> to halt, doesn't <em>approve</em> to start.
-      Opt-out entirely with <code>CARTOGRAPH_AUTO_PROMOTE=0</code>.
+      Detection is deterministic and free; execution is the active
+      session's contract. Episodes distill into topics (dedup-first),
+      topics fold into bedrock immediately, and the corpus compacts as it
+      improves. No review gate; the human vetoes with rejected: true.
+      Nothing spawns claude in the background.
     </p>
 
     <div class="grid md:grid-cols-2 gap-4 max-w-5xl">
       <div class="border-2 border-[var(--border-soft)] p-4">
-        <div class="font-mono text-xs font-bold mb-1">Cascade 1 — episode → topic</div>
-        <p class="text-sm text-muted mb-3">
-          Scans every <code>episodes/YYYY-MM/*.md</code>. Groups by
-          <code>(repo, tag)</code>. Any tag with ≥<code>N</code> qualifying
-          episodes (<code>N = CARTOGRAPH_AUTO_PROMOTE_EPISODES</code>, default
-          <code>3</code>) becomes a candidate.
-        </p>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">An episode is eligible if</div>
-        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
-          <li><code>distilled_into:</code> is unset (null / <code>~</code>)</li>
-          <li><code>rejected: true</code> is NOT set</li>
-          <li>has a <code>repo:</code> field</li>
-          <li>has at least one tag (inline <code>tags: [a, b]</code> or block <code>- a</code> form)</li>
-        </ul>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">An episode contributes to <em>every</em> tag it carries</div>
-        <p class="text-sm text-muted">
-          An episode tagged <code>tags: [acme, parsing]</code> counts toward both
-          buckets. If <code>acme</code> hits 3 first, that fires; <code>parsing</code>
-          might or might not depending on how many other <code>parsing</code>-tagged
-          episodes share the bucket.
-        </p>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">When it fires</div>
-        <p class="text-sm text-muted">
-          <code>nohup bash scripts/promote-tag.sh &lt;tag&gt; &amp;</code> — drafts
-          <code>guides/&lt;repo&gt;/topics/&lt;tag&gt;.md</code> with
-          <code>auto_promoted: true</code>, then stamps
-          <code>distilled_into: guides/&lt;repo&gt;/topics/&lt;tag&gt;.md</code>
-          on each source episode (which is how the audit knows not to re-promote
-          on the next run).
-        </p>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Skipped if</div>
-        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
-          <li>topic file already exists AND ≥<code>count - 1</code> of the source episodes are already distilled into it (idempotency check)</li>
-          <li>a stale lock file exists at <code>.auto-promote-locks/episode-to-topic-&lt;repo&gt;-&lt;tag&gt;.lock</code> (auto-reaped at &gt;1h)</li>
-          <li><code>max_per_run</code> already promoted this run (default 2 — see <code>CARTOGRAPH_AUTO_PROMOTE_MAX_PER_RUN</code>)</li>
+        <div class="font-mono text-xs font-bold mb-1">Detect (deterministic)</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-1">
+          <li><code>scripts/digest.sh</code> is the single promotion
+            detector: any tag with &ge;<code>N</code> episodes not yet
+            distilled under it
+            (<code>N = CARTOGRAPH_PROMOTE_THRESHOLD</code>, default 3)
+            gets a <code>/promote &lt;tag&gt;</code> suggestion at
+            SessionStart; the candidates card below applies the same
+            rule.</li>
+          <li>Unfolded, blessed topics and anchor gaps show up under
+            <a href="/console/" class="text-accent hover:underline">/console/</a>
+            and <code>/queue</code>.</li>
         </ul>
       </div>
 
       <div class="border-2 border-[var(--border-soft)] p-4">
-        <div class="font-mono text-xs font-bold mb-1">Cascade 2 — topic → bedrock</div>
-        <p class="text-sm text-muted mb-3">
-          Scans every <code>guides/&lt;repo&gt;/topics/*.md</code>. For each, fires
-          <code>scripts/fold-topic-to-bedrock.sh &lt;repo&gt; &lt;name&gt;</code> —
-          claude rewrites the relevant section of
-          <code>overview.md</code> / <code>architecture.md</code> /
-          <code>conventions.md</code> with the topic's content, then stamps
-          <code>folded_into_bedrock:</code> on the topic.
-        </p>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">A topic is eligible if</div>
-        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
-          <li><code>folded_into_bedrock:</code> is unset (null / <code>~</code>)</li>
-          <li><code>rejected: true</code> is NOT set</li>
-        </ul>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Default-approve, not opt-in</div>
-        <p class="text-sm text-muted">
-          An earlier version of this required <code>reviewed_by_human:</code>
-          before folding. That made bedrock fold opt-IN, which contradicts the
-          cartograph-compounds-automatically property. Now: drafted topic →
-          fold cascade fires next SessionStart unless you reject it. You
-          actively <em>stop</em> the cascade; you don't <em>start</em> it.
-        </p>
-        <div class="font-mono text-[10px] uppercase tracking-widest text-muted mt-3 mb-1">Skipped if</div>
-        <ul class="text-sm text-muted list-disc pl-5 space-y-0.5">
-          <li>lock file exists at <code>.auto-promote-locks/topic-to-bedrock-&lt;repo&gt;-&lt;name&gt;.lock</code></li>
-          <li><code>max_per_run</code> reached</li>
+        <div class="font-mono text-xs font-bold mb-1">Act (the session, automatically)</div>
+        <ul class="text-sm text-muted list-disc pl-5 space-y-1">
+          <li><code>/promote &lt;tag&gt;</code> in-session.
+            The promotion-candidates card on
+            <a href="/console/" class="text-accent hover:underline">/console/</a>
+            lists the ready tags and the exact command per tag.
+            Drafted topics land with <code>auto_promoted: true</code> and stamp
+            <code>distilled_into:</code> on each source episode.</li>
+          <li>Folding a topic into bedrock: edit the bedrock in-session with
+            the topic in hand, then stamp <code>folded_into_bedrock:</code> on
+            the topic note.</li>
+          <li>Every one of these runs inside your session, where the context
+            already is. Nothing spawns behind you.</li>
         </ul>
       </div>
     </div>
 
     <div class="mt-6 max-w-3xl">
-      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Worked example</div>
-      <p class="text-sm text-muted mb-2">Say you finish three sessions this week in a repo you track (call it <code>acme</code>). Each writes an episode:</p>
-      <ul class="font-mono text-xs text-muted list-none space-y-1 mb-3 pl-3 border-l-2 border-[var(--border-soft)]">
-        <li>episodes/2026-05/2026-05-25-153140-cartograph.md · repo: acme · tags: [acme, layout-classes]</li>
-        <li>episodes/2026-05/2026-05-25-153330-cartograph.md · repo: acme · tags: [acme, partial-load]</li>
-        <li>episodes/2026-05/2026-05-25-173127-cartograph.md · repo: acme · tags: [acme, drift-resolution]</li>
-      </ul>
-      <p class="text-sm text-muted mb-2">
-        Three episodes share the tag <code>acme</code>. Each unique secondary tag
-        (<code>layout-classes</code>, <code>partial-load</code>, <code>drift-resolution</code>)
-        has count=1 — below threshold.
-      </p>
-      <ul class="text-sm text-muted list-disc pl-5 space-y-1 mb-3">
-        <li><strong>Next SessionStart:</strong> <code>auto-promote.sh</code> finds the <code>(acme, acme)</code> bucket at count 3 → fires <code>promote-tag.sh acme</code> in background.</li>
-        <li><strong>~30–90s later:</strong> <code>guides/acme/topics/acme.md</code> exists with <code>auto_promoted: true</code>. Each source episode has <code>distilled_into: guides/acme/topics/acme.md</code>.</li>
-        <li><strong>Same SessionStart:</strong> the new topic file isn't seen by Cascade 2 yet (scan happened before the file existed) — fold waits one cycle.</li>
-        <li><strong>Following SessionStart:</strong> Cascade 2 finds the new topic, fires <code>fold-topic-to-bedrock.sh acme acme</code> → claude weaves the topic's content into <code>guides/acme/overview.md</code>, stamps <code>folded_into_bedrock: guides/acme/overview.md</code> on the topic.</li>
-        <li><strong>To halt at any point:</strong> set <code>rejected: true</code> on the episode (blocks promotion), or on the topic (blocks fold), or on the auto-drafted topic (blocks fold + flags for cleanup).</li>
-      </ul>
-    </div>
-
-    <div class="mt-6 max-w-3xl">
-      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Manual overrides</div>
-      <ul class="text-sm text-muted list-disc pl-5 space-y-1">
-        <li><a href="/promotions/" class="text-accent hover:underline">/promotions/</a> — the activity log + pending candidates. Manual <em>Promote → topic</em> button on each candidate row for cases where the auto-hook didn't fire (workspace-fork session, stuck lock, you crossed ≥3 mid-session and don't want to wait).</li>
-        <li><code>/promote &lt;tag&gt;</code> slash — explicit one-off from within a Claude Code session.</li>
-        <li>Edit <code>CARTOGRAPH_AUTO_PROMOTE_EPISODES</code> in your shell env to raise/lower the threshold per-session.</li>
-        <li><code>CARTOGRAPH_AUTO_PROMOTE=0</code> opts out of both cascades for that session.</li>
-      </ul>
-    </div>
-
-    <div class="mt-6 max-w-3xl">
-      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Why default-approve</div>
+      <div class="font-mono text-xs uppercase tracking-widest text-muted mb-2">Default-approve on drafted output</div>
       <p class="text-sm text-muted">
-        The whole point of cartograph is that understanding compounds without
-        being asked. If promotion required explicit approval, every session
-        would carry a manual review tax — and most sessions you just want to
-        keep working. Default-approve flips the polarity: claude does the
-        drafting; the human only intervenes when the draft is wrong. Reject
-        is cheap (one frontmatter field), so the asymmetry is fine.
+        What a session drafts is assumed good unless you reject it: set
+        <code>rejected: true</code> on an episode (blocks promotion) or a
+        topic (blocks folding, flags it for cleanup). Reject is one
+        frontmatter field, so the asymmetry stays cheap.
       </p>
     </div>
   </Card>
@@ -321,28 +253,29 @@ import Card from '~/components/Card.astro';
         </p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-4">
-        <div class="font-mono text-xs font-bold mb-1">Auto-review + bloat control</div>
+        <div class="font-mono text-xs font-bold mb-1">Review + bloat control</div>
         <p class="text-sm text-muted">
-          Notes awaiting review are judged in nightly batches by ONE capped
-          headless agent (≤12/scan) that spot-checks anchors against the
-          code. Approves leave the review queue silently; confident defects
-          get <code>rejected: true</code>; near-duplicate episodes get
-          <code>superseded_by</code> — and retired notes drop out of BM25 +
-          injection menus (files are never deleted). Only contested calls
-          reach the human, pre-annotated with verdict + reason. Editing a
-          note voids its opinion and re-enters review.
+          Notes awaiting review sit in the queue until you clear them at
+          <a href="/console/review/" class="text-accent hover:underline">/console/review/</a>:
+          approve stamps <code>reviewed_by_human</code>, reject records the
+          reason on the file, discard deletes it. Near-duplicate episodes get
+          <code>superseded_by</code>, and retired notes drop out of BM25 +
+          injection menus (files are never deleted). Editing a cited
+          workspace file puts every topic that cites it back in the queue,
+          so a silent drift becomes a visible one.
         </p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-4">
-        <div class="font-mono text-xs font-bold mb-1">Drift auto-fix + nightly maintenance</div>
+        <div class="font-mono text-xs font-bold mb-1">Drift drain + daily maintenance</div>
         <p class="text-sm text-muted">
-          The server closes drift on its own: a background loop resolves
-          open drift reports every 30 minutes (repo-level via auto-revise,
-          per-topic via the per-citation fixer), one capped headless agent
-          at a time — pause with <code>CARTOGRAPH_DRIFT_AUTOFIX=0</code>.
-          <code>scripts/setup-launchd.sh</code> adds KeepAlive supervision
-          and a 03:30 maintenance backstop: the same drift drain, content
-          lint, anchor-gap fixes, curation drain, session archival.
+          The server closes the mechanical half of drift on its own: a
+          background loop re-detects per-topic drift every 30 minutes and
+          renumbers line-shifted citations, git and python only, no tokens.
+          Pause it with <code>CARTOGRAPH_DRIFT_AUTOFIX=0</code>. A report
+          that survives the pass needs judgment and waits for a session.
+          <code>scripts/setup-launchd.sh</code> adds KeepAlive supervision,
+          and the daemon runs a daily maintenance pass: the same drift
+          drain, content lint, the anchor-coverage audit, session archival.
           Supervision is drift-proof: every server start routes through
           launchd (no detached process can win the port and lock the
           supervisor out), and a self-healer runs at SessionStart and in
@@ -390,16 +323,12 @@ import Card from '~/components/Card.astro';
         <p class="text-sm text-muted mt-1">Every cross-repo edge — which file on one side maps to which entry point on the other, and the concept that crosses.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
-        <a href="/promotions/" class="font-bold text-accent hover:underline">Promotions <code class="text-xs">/promotions/</code></a>
-        <p class="text-sm text-muted mt-1">The promotion activity log + pending episode→topic candidates, with a manual Promote button for cases the auto-cascade didn't fire.</p>
-      </div>
-      <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/console/" class="font-bold text-accent hover:underline">Console <code class="text-xs">/console/</code></a>
-        <p class="text-sm text-muted mt-1">Review queue, drift reports, promotion candidates, lint debt, chassis error feed, diary. The "what is the chassis asking me to do?" surface.</p>
+        <p class="text-sm text-muted mt-1">Review queue, drift reports, promotion candidates (each showing the <code>/promote</code> command to run in a session), lint debt, chassis error feed. The "what is the chassis asking me to do?" surface.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <a href="/console/review/" class="font-bold text-accent hover:underline">Review everything <code class="text-xs">/console/review/</code></a>
-        <p class="text-sm text-muted mt-1">Unified bulk surface — bless (auto-drafted episodes + unblessed topics), anchor gaps, per-topic drift. Filter by type, one button, claude acts per item.</p>
+        <p class="text-sm text-muted mt-1">The bless backlog, one item at a time: unblessed episodes and topics, approve or reject with a note. Anchor gaps and drift are read-only surfaces elsewhere.</p>
       </div>
       <div class="border-2 border-[var(--border-soft)] p-3">
         <div class="font-bold">⌘K palette</div>
@@ -502,16 +431,15 @@ import Card from '~/components/Card.astro';
       <div>
         <div class="font-bold mb-1">Scenario C — Random Friday: "what's been happening?"</div>
         <p class="text-sm text-muted">
-          User opens cartograph cold. Home shows: 3 auto-drafted episodes
-          awaiting review (the chassis caught them at session-end), 1 per-repo
+          User opens cartograph cold. Home shows: 3 episodes awaiting review
+          (written at the end of last week's sessions), 1 per-repo
           drift report opened on <code>acme</code> (4 commits ahead), 2 topic-level
           drifts on another repo (cited code refactored). User clicks
           <a href="/console/review/" class="text-accent hover:underline">/console/review/</a>
-          to triage the auto-drafted episodes — bless the good ones, reject
-          the noisy one with a note (which triggers
-          <code>revise-rejected.sh</code> to refine it). Then to
-          <a href="/diary/" class="text-accent hover:underline">/diary/</a>
-          to read what the chassis did while they were away.
+          to triage them: bless the good ones, reject the noisy one with a
+          note saying what is wrong, which the next session picks up via
+          <code>/revise</code>. To see what the chassis did while they were
+          away, they read the day's entry under <code>diary/</code> in the repo.
         </p>
       </div>
 

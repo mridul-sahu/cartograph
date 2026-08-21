@@ -73,19 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/episode-prompt.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/usage-audit.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/update-note-usage.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/session-log.sh stop"
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/session-stop.sh"
           }
         ]
       }
@@ -96,23 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/token-check.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/session-log.sh touch"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/post-edit-topic-mark.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/normalize-note-frontmatter.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/scripts/promote-nudge.sh"
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/post-edit.sh"
           }
         ]
       },

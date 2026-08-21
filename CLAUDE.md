@@ -209,18 +209,23 @@ the task, write it. The bar is also *real* — trivial sessions
 
 ---
 
-## 6. Promotion (episodes → topic notes)
+## 6. The self-evolving loop (episodes → topics → bedrock, automatic)
 
-When ≥3 episodes share a tag and aren't yet distilled, the SessionStart
-hook surfaces them via `scripts/digest.sh` and suggests `/promote <tag>`.
+When ≥3 episodes share a tag not yet distilled under it, the digest and
+the post-edit signal issue a DISTILLATION CONTRACT that the active
+session executes itself (the `/promote` procedure; nobody types it):
 
-`/promote <tag>`:
-1. Reads all matching episodes.
-2. Drafts `guides/<repo>/topics/<tag>.md`.
-3. Marks each source episode's frontmatter
-   `distilled_into: guides/<repo>/topics/<tag>.md`.
-4. The new topic note records `distilled_from: [<paths>]`.
-5. You review + edit; if blessed, set `reviewed_by_human: <date>`.
+1. Dedup first: merge into an existing topic when one covers the
+   ground; create `guides/<repo>/topics/<tag>.md` only when none does.
+2. Stamp the graph edges: `distilled_into:` on sources,
+   `distilled_from:` plus a `## Related` section on the topic.
+3. Fold immediately: a 1-3 sentence cross-linked reference in the most
+   relevant bedrock file, `folded_into_bedrock:` stamped. No review
+   gate; veto any note with `rejected: true`.
+
+Distilled episodes retire from search (files stay as history), and the
+daily curation agenda surfaces near-dups, decay, and coverage gaps as
+contracts, so the corpus compacts as it improves.
 
 ---
 
@@ -254,8 +259,7 @@ Cross-repo seams specifically go in `guides/seams.md` via `/seam`.
 **Authoring & curation:** `/episode <title>`, `/research <repo>
 <slug>`, `/paper <repo> <slug>`, `/topic <repo> <slug>`, `/draft
 <slug>`, `/walkthrough <slug>`, `/seam <a> <b>`, `/revise <topic>`,
-`/promote <tag>`, `/backfill <repo>`, `/auto-revise <topic>`, `/pin
-<path>`.
+`/promote <tag>`, `/backfill <repo>`, `/pin <path>`.
 
 **Stacked-PR workflow (inside `workspace/<repo>/`):** `/stack`,
 `/stack-new <slug>`, `/stack-pr`, `/stack-submit`, `/stack-restack`,
@@ -263,8 +267,9 @@ Cross-repo seams specifically go in `guides/seams.md` via `/seam`.
 
 ### MCP tools
 
-If you've opted in via `.mcp.json`, three augmenting tools are callable
-mid-turn:
+Wired via `.mcp.json` in cartograph sessions; register at user scope
+(`claude mcp add -s user cartograph -- python3 <root>/scripts/mcp_server.py`)
+to reach cartograph from any session on the machine. Five tools:
 
 - `cartograph_search(query, repo?, layer?, k=10)` — BM25 retrieval.
   Call before grepping.
@@ -272,6 +277,11 @@ mid-turn:
   of any workspace file.
 - `cartograph_drift(repo, anchor?)` — drift state. Call before
   trusting any topic note.
+- `cartograph_bedrock(repo, file?)` — a repo's bedrock, for sessions
+  outside the injection.
+- `cartograph_capture(kind, project, title, body, ...)` — file an
+  episode or research note from an external project; it enters the
+  review queue with `captured_from:` provenance.
 
 ---
 

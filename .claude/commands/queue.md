@@ -12,7 +12,7 @@ Run the queue script:
 The queue surfaces:
 
 - Auto-drafted episodes that haven't been reviewed
-- Topic notes auto-promoted but not yet blessed (`reviewed_by_human:` absent)
+- Topic notes promoted but not yet blessed (`reviewed_by_human:` absent)
 - Topics aged >90 days without revision (freshness debt)
 - Per-repo and per-topic drift reports
 - Active worknote leases (parallel-agent coordination)

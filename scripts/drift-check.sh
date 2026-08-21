@@ -82,10 +82,19 @@ for repo in "${repos[@]}"; do
   file_count="$(git -C "$fork_dir" diff --name-only "$backfilled_sha".."$current_sha" 2>/dev/null | wc -l | tr -d ' ')"
 
   {
-    echo "# Drift: $repo"
+    echo "# Ingest: $repo — upstream moved; absorb what changed"
     echo
     echo "Bedrock reflects \`$backfilled_sha\`; upstream is now \`$current_sha\`."
     echo "**$commit_count commit(s), $file_count file(s) changed.**"
+    echo
+    echo "This is NEW KNOWLEDGE to ingest, not just citations to defend."
+    echo "The pull tells you what upstream learned; the notes should learn it too."
+    echo
+    echo "## Where the change concentrated (top directories)"
+    echo
+    git -C "$fork_dir" diff --name-only "$backfilled_sha".."$current_sha" 2>/dev/null \
+      | awk -F/ 'NF>2 {print $1"/"$2} NF<=2 {print $1}' | sort | uniq -c | sort -rn | head -8 \
+      | awk '{printf "- %s (%d files)\n", $2, $1}'
     echo
     echo "## Files cited in the current bedrock"
     echo
@@ -117,20 +126,23 @@ for repo in "${repos[@]}"; do
     echo
     git -C "$fork_dir" log --oneline --no-decorate -n 20 "$backfilled_sha".."$current_sha" 2>/dev/null | sed 's/^/- /'
     echo
-    echo "## What to do"
+    echo "## Ingestion contract (automatic — the active session does this)"
     echo
-    echo "Read the changed files cited above (if any). If anything in"
-    echo "\`guides/$repo/{overview,architecture,conventions}.md\` is contradicted,"
-    echo "revise it in place — see CLAUDE.md §7. When done updating, bump"
-    echo "\`backfilled_from_sha: $current_sha\` and \`last_revised: <today>\` in"
-    echo "each updated bedrock file's frontmatter. The next pull will then see"
-    echo "no drift."
+    echo "1. For each CHANGED cited file: read the diff and update the notes"
+    echo "   that describe it so they state the NEW behavior (absorb, don't"
+    echo "   just re-verify). Fold anything load-bearing into bedrock."
+    echo "2. For the top changed directories with no covering note: if the"
+    echo "   change is substantial, write the topic or episode that captures"
+    echo "   what upstream added (the coverage-gap items in the curation"
+    echo "   agenda track the hottest of these)."
+    echo "3. Bump \`backfilled_from_sha: $current_sha\` and \`last_revised:\`"
+    echo "   in each updated bedrock file. The next pull then starts clean."
     echo
-    echo "If drift looks structural (many files changed across many subsystems),"
-    echo "consider running \`/backfill $repo\` for a full re-exploration."
+    echo "Structural change (many subsystems moved): run \`/backfill $repo\`"
+    echo "for a full re-exploration instead of piecemeal ingestion."
   } > "$report"
 
-  echo "[drift] $repo: $commit_count commit(s), $file_count file(s) — see .drift-reports/$repo.md"
+  echo "[ingest] $repo: $commit_count commit(s), $file_count file(s) to absorb — see .drift-reports/$repo.md"
 done
 
 # Per-citation drift (claude-designs/cartograph/per-citation-drift/).

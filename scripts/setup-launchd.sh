@@ -2,8 +2,8 @@
 # scripts/setup-launchd.sh — install the cartograph launchd user agents:
 #
 #   com.cartograph.serve        — serve.py under KeepAlive supervision
-#                                         (serve-cartograph.sh --foreground)
-#   com.cartograph.maintenance  — scripts/maintenance.sh daily at 03:30
+#                                         (serve-cartograph.sh --foreground);
+#                                         also runs the daily maintenance pass
 #   com.cartograph.code-server  — embedded VS Code under KeepAlive supervision
 #                                         (serve-code-server.sh --foreground);
 #                                         skipped if code-server isn't installed
@@ -24,10 +24,11 @@ source "$(dirname "$0")/lib/load-config.sh"
 TEMPLATE_DIR="$CARTOGRAPH_ROOT/scripts/launchd"
 DEST_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$CARTOGRAPH_ROOT/.cartograph/logs"
-AGENTS=(com.cartograph.serve com.cartograph.maintenance com.cartograph.code-server)
-# Pre-rename labels (2026-06-10) — boot these out on every run so machines
-# that installed under the old names migrate cleanly.
-LEGACY_AGENTS=(com.cartograph.serve com.cartograph.maintenance)
+AGENTS=(com.cartograph.serve com.cartograph.code-server)
+# Retired labels — boot these out on every run so existing machines
+# migrate cleanly (pre-rename 2026-06-10 names, and the standalone
+# maintenance timer folded into serve.py on 2026-08-21).
+LEGACY_AGENTS=(com.cartograph.serve com.cartograph.maintenance com.cartograph.maintenance)
 
 uid="$(id -u)"
 
@@ -137,7 +138,6 @@ done
 if (( failed == 0 )); then
   echo "setup-launchd: done. check status with:"
   echo "  launchctl print gui/$uid/com.cartograph.serve | head -20"
-  echo "  launchctl print gui/$uid/com.cartograph.maintenance | head -20"
   if (( have_code_server == 1 )); then
     echo "  launchctl print gui/$uid/com.cartograph.code-server | head -20"
   fi

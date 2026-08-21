@@ -19,7 +19,7 @@ cartograph/
 │   ├── lib/                 ← sourceable helpers (load-config, notify-server)
 │   ├── templates/           ← per-fork CLAUDE.md + git hooks, bedrock stubs
 │   ├── serve.py             ← FastAPI on :47777 (71 endpoints, web UI backend)
-│   ├── mcp_server.py        ← MCP stdio server (3 tools)
+│   ├── mcp_server.py        ← MCP stdio server (5 tools; user-scope = machine-wide)
 │   ├── inject-context.sh    ← UserPromptSubmit hook (the orientation injection)
 │   ├── doctor.sh            ← `just doctor` / `/doctor`
 │   └── (~40 more)
@@ -100,7 +100,7 @@ Cartograph wires into Claude Code's hook system via
 
 | Event | Fires when | Typical uses |
 |---|---|---|
-| `SessionStart` | New session opens | Refresh state, surface candidates, run digests |
+| `SessionStart` | New session opens | Cheap per-session state only; heavy refresh lives in the serve daemon |
 | `UserPromptSubmit` | Every user prompt | Inject context (the orientation hook) |
 | `PreToolUse` | Before any tool call | Augment context for `Read`/`Edit` of specific files |
 | `PostToolUse` | After any tool call | Capture what changed; normalize/lint |
@@ -163,20 +163,20 @@ exit 0
 | Script | Event | What it does |
 |---|---|---|
 | `session-log.sh` | SessionStart, PostToolUse, Stop | Append-only session worknote |
-| `upstream-sync.sh` | SessionStart | Fetch upstream, write drift reports |
-| `digest.sh` | SessionStart | Surface ≥3-same-tag promotion candidates |
-| `auto-promote.sh` | SessionStart | Headlessly draft topics from episode chains |
-| `build-file-index.py` | SessionStart | Rebuild reverse file index |
-| `build-search-index.py` | SessionStart | Rebuild BM25 search index |
-| `anchor-coverage.py` | SessionStart | Audit topic-note citation density |
-| `diary.sh` | SessionStart | Daily auto-committed digest |
+| `upstream-sync.sh` | serve daemon (6h loop) | Fetch upstream, write drift reports |
+| `digest.sh` | serve daemon (content watch) | Precompute /promote candidates for the SessionStart cache |
+| `build-file-index.py` | serve daemon (content watch) | Rebuild reverse file index |
+| `build-search-index.py` | serve daemon (content watch) | Rebuild BM25 search index |
+| `anchor-coverage.py` | serve daemon (daily pass) | Audit topic-note citation density |
+| `diary.sh` | serve daemon (daily pass) | Daily auto-committed digest |
 | `inject-context.sh` | UserPromptSubmit | The orientation injection (this is the one to read first) |
 | `pre-read-augment.sh` | PreToolUse:Read | Inject notes citing the file being Read |
 | `pre-edit-augment.sh` | PreToolUse:Edit | Same, for files about to be Edited |
 | `token-check.sh` | PostToolUse:Edit/Write | Soft-warn on forbidden tokens |
 | `post-edit-topic-mark.sh` | PostToolUse:Edit/Write | Mark topics for re-review when cited files change |
 | `normalize-note-frontmatter.sh` | PostToolUse:Edit/Write | Backfill missing review-queue fields |
-| `episode-prompt.sh` | Stop | Reminder + background auto-draft |
+| `session-stop.sh` | Stop | Dispatcher: episode reminder, usage audit, note-usage attribution, session-log stop |
+| `post-edit.sh` | PostToolUse:Edit/Write | Dispatcher for the four rows above it |
 | `usage-audit.sh` | Stop | Chassis-utilization audit appended to session log |
 
 ---
@@ -208,8 +208,10 @@ def cartograph_my_tool(query: str, repo: str | None = None) -> dict[str, Any]:
 - **Augment, don't wrap.** Don't make a tool that just runs `Grep`. The
   three existing tools (search, notes_for_file, drift) exist because
   they provide something `Grep`/`Read`/`Glob` can't.
-- **Read-only.** Writes go through slash commands. The MCP surface is
-  for retrieval and indexing, not mutation.
+- **Writes go through one schema-correct door.** `cartograph_capture`
+  is the only mutation: full frontmatter, review-queue entry,
+  provenance, index rebuild. Everything else stays read-only; in-repo
+  authoring still uses the slash commands.
 - **The docstring is the model's prompt.** It will read the docstring
   to decide whether to call the tool. Write it like a prompt — lead
   with `**Call this when …**`, list trigger conditions explicitly,
@@ -303,8 +305,8 @@ never appear in published content, add it to your own
 `CARTOGRAPH_FORBIDDEN_EXTRAS`. The framework defaults (`cartograph`,
 `anthropic`, `claude code/opus/sonnet/haiku`) are baked into
 `scripts/lint-content.sh`, `scripts/token-check.sh`,
-`scripts/templates/hooks/{commit-msg,pre-push}`, and the
-`backfill-bedrock.sh` prompt. Changing the defaults requires a PR.
+and `scripts/templates/hooks/{commit-msg,pre-push}`. Changing the
+defaults requires a PR.
 
 ---
 

@@ -1,16 +1,13 @@
 // BulkReview — bulk-triage surface for the cartograph review backlog.
 //
-// For each pending item (auto-drafted episodes + unblessed topics):
-//   1. "Get Claude opinion" button → POST /api/review/opinion → returns
-//      {verdict, reason, confidence} from `claude -p` headless.
-//   2. Approve → POST to existing /api/episode/<slug>/review or
+// For each pending item (unblessed episodes + unblessed topics):
+//   1. Approve → POST to existing /api/episode/<slug>/review or
 //      /api/topic/<repo>/<topic>/review.
-//   3. Reject (with note) → same endpoint with verdict=reject + notes;
-//      the chassis's revise-rejected.sh picks it up and claude -p rewrites
-//      the note per the reason.
+//   2. Reject (with note) → same endpoint with verdict=reject + note;
+//      the note records why, and you rewrite it in-session via /revise.
 //
-// One item at a time, keyboard-navigable. Designed for blowing through a
-// 50-item backlog in minutes.
+// The verdict is always yours: nothing pre-judges the item. One item at a
+// time, keyboard-navigable, built for clearing a 50-item backlog fast.
 
 import { useEffect, useState } from 'react';
 
@@ -22,12 +19,6 @@ interface PendingItem {
   slug: string | null;
   date?: string | null;
   last_revised?: string | null;
-}
-
-interface Opinion {
-  verdict: 'approve' | 'reject';
-  reason: string;
-  confidence: 'high' | 'medium' | 'low';
 }
 
 interface ActionResult {
@@ -61,8 +52,6 @@ function detailUrlFor(item: PendingItem): string {
 export default function BulkReview() {
   const [items, setItems] = useState<PendingItem[] | null>(null);
   const [cursor, setCursor] = useState(0);
-  const [opinion, setOpinion] = useState<Opinion | null>(null);
-  const [opinionLoading, setOpinionLoading] = useState(false);
   const [body, setBody] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
@@ -83,7 +72,6 @@ export default function BulkReview() {
   // On cursor move, reset per-item state and fetch the rendered body.
   useEffect(() => {
     if (!items || items.length === 0) return;
-    setOpinion(null);
     setRejectMode(false);
     setRejectNote('');
     setResult(null);
@@ -95,43 +83,6 @@ export default function BulkReview() {
     // (Future: a /api/raw/<path> endpoint could enable in-place rendering.)
   }, [cursor, items]);
 
-  const fetchOpinion = async () => {
-    const item = items?.[cursor];
-    if (!item) return;
-    setOpinionLoading(true);
-    setOpinion(null);
-    try {
-      // Fire-and-forget — POST spawns the script detached and returns
-      // immediately; then poll /api/job/opinion until terminal status.
-      await fetch('/api/review/opinion', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: item.path }),
-      });
-      const started = Date.now();
-      const MAX_SECS = 300; // 5 min cap on this client poll
-      while ((Date.now() - started) / 1000 < MAX_SECS) {
-        await new Promise((r) => setTimeout(r, 3000));
-        try {
-          const r = await fetch(`/api/job/opinion?path=${encodeURIComponent(item.path)}`);
-          if (!r.ok) continue;
-          const j = await r.json();
-          if (j.status === 'done') { setOpinion(j as Opinion); return; }
-          if (j.status === 'error') {
-            setOpinion({ verdict: 'approve', reason: `error: ${j.error}`, confidence: 'low' });
-            return;
-          }
-          // running → keep polling
-        } catch { /* transient */ }
-      }
-      setOpinion({ verdict: 'approve', reason: 'client poll timed out (still running server-side)', confidence: 'low' });
-    } catch (e) {
-      setOpinion({ verdict: 'approve', reason: String(e), confidence: 'low' });
-    } finally {
-      setOpinionLoading(false);
-    }
-  };
-
   const submitReview = async (verdict: 'approve' | 'reject', notes?: string) => {
     const item = items?.[cursor];
     if (!item) return;
@@ -139,9 +90,9 @@ export default function BulkReview() {
     if (!url) { setResult({ ok: false, message: 'no review URL for item' }); return; }
     setActionBusy(true);
     try {
-      // Backend canonical key is `note` (singular). 'notes' silently
-      // 400'd, so the revise-rejected pipeline never spawned on
-      // reject — caller-visible bug across all three review surfaces.
+      // Backend canonical key is `note` (singular). Sending 'notes'
+      // used to 400 silently, so reject reasons never reached the file
+      // across all three review surfaces.
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -151,7 +102,7 @@ export default function BulkReview() {
         const text = await r.text();
         setResult({ ok: false, message: `${r.status}: ${text.slice(0, 200)}` });
       } else {
-        setResult({ ok: true, message: verdict === 'reject' ? '✓ rejected — revise-rejected.sh will fix it' : '✓ blessed' });
+        setResult({ ok: true, message: verdict === 'reject' ? '✓ rejected · revise it in-session with /revise' : '✓ blessed' });
         // Advance to next item after a short delay.
         setTimeout(() => {
           if (items && cursor < items.length - 1) {
@@ -223,35 +174,6 @@ export default function BulkReview() {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={fetchOpinion}
-            disabled={opinionLoading || actionBusy}
-            className="px-3 py-1 font-mono text-xs border-2 border-border bg-bg hover:bg-[var(--surface-1)] disabled:opacity-50"
-          >
-            {opinionLoading ? 'asking claude…' : opinion ? 're-ask claude' : 'get claude\'s opinion'}
-          </button>
-          <a
-            href={detailUrlFor(item)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-xs text-muted hover:text-fg"
-          >open in detail view ↗</a>
-        </div>
-
-        {opinion && (
-          <div className={`border-2 p-3 ${opinion.verdict === 'approve' ? 'border-[var(--ok)]' : 'border-[var(--warn)]'}`}>
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className={`font-mono text-xs font-bold ${opinion.verdict === 'approve' ? 'text-[var(--ok)]' : 'text-[var(--warn)]'}`}>
-                claude suggests: {opinion.verdict.toUpperCase()}
-              </span>
-              <span className="font-mono text-[10px] text-muted">confidence: {opinion.confidence}</span>
-            </div>
-            <p className="text-sm text-fg">{opinion.reason}</p>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
             onClick={() => submitReview('approve')}
             disabled={actionBusy}
             className="px-3 py-1 font-mono text-xs bg-[var(--ok)] text-bg hover:opacity-90 disabled:opacity-50"
@@ -269,16 +191,16 @@ export default function BulkReview() {
             <textarea
               value={rejectNote}
               onChange={(e) => setRejectNote(e.target.value)}
-              placeholder={opinion?.verdict === 'reject' ? opinion.reason : 'what\'s wrong with this note? (the chassis will hand this note to claude -p to fix it)'}
+              placeholder="what's wrong with this note? (the reason is stamped on the file for the session that revises it)"
               rows={3}
               className="w-full px-3 py-2 font-mono text-xs border-2 border-border bg-bg focus:outline-none focus:border-accent"
             />
             <button
               type="button"
-              onClick={() => submitReview('reject', rejectNote || opinion?.reason || 'rejected via bulk-review UI')}
+              onClick={() => submitReview('reject', rejectNote || 'rejected via bulk-review UI')}
               disabled={actionBusy}
               className="px-3 py-1 font-mono text-xs bg-[var(--warn)] text-bg hover:opacity-90 disabled:opacity-50"
-            >confirm reject + queue fix</button>
+            >confirm reject</button>
           </div>
         )}
 

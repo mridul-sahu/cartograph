@@ -177,6 +177,12 @@ def build_index(root: Path) -> dict[str, Any]:
         superseded = str(fm.get("superseded_by") or "").strip()
         if superseded and superseded != "~":
             continue
+        # Distilled episodes are retired carriers: their insight now lives
+        # in the topic note, which is what retrieval should surface. They
+        # stay on disk and in the UI as history; they leave the corpus.
+        distilled = str(fm.get("distilled_into") or "").strip()
+        if rel.startswith("episodes/") and distilled and distilled != "~":
+            continue
         title = ""
         if isinstance(fm.get("topic"), str):
             title = fm["topic"]

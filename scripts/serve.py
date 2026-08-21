@@ -39,7 +39,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import signal
 import re
 import shutil
 import subprocess
@@ -210,65 +209,29 @@ CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
      "default": "", "applies": "immediate",
      "label": "Publish destination", "help": "owner/repo for `just publish`. Empty = <github-user>/cartograph."},
 
-    # --- Auto-curation ---
-    {"key": "CARTOGRAPH_AUTO_PROMOTE", "group": "Auto-curation", "type": "bool",
-     "default": "1", "applies": "immediate",
-     "label": "Auto-promote", "help": "Master switch for the episode→topic→bedrock cascade."},
-    {"key": "CARTOGRAPH_AUTO_PROMOTE_EPISODES", "group": "Auto-curation", "type": "int",
+    # --- Curation reminders (deterministic — nothing spawns claude) ---
+    {"key": "CARTOGRAPH_PROMOTE_THRESHOLD", "group": "Auto-curation", "type": "int",
      "default": "3", "applies": "immediate",
-     "label": "Promote: min episodes", "help": "Minimum episodes sharing a tag before topic promotion."},
-    {"key": "CARTOGRAPH_AUTO_PROMOTE_MAX_PER_RUN", "group": "Auto-curation", "type": "int",
-     "default": "2", "applies": "immediate",
-     "label": "Promote: max per run", "help": "Cap on promotions per SessionStart run (token budget)."},
-    {"key": "CARTOGRAPH_AUTO_EPISODE", "group": "Auto-curation", "type": "bool",
-     "default": "1", "applies": "immediate",
-     "label": "Auto-episode", "help": "Auto-draft an episode from a session log at Stop."},
+     "label": "Promote threshold", "help": "Minimum episodes on a tag (not yet distilled under it) before the digest and the console suggest /promote."},
     {"key": "CARTOGRAPH_AUTO_EPISODE_THRESHOLD", "group": "Auto-curation", "type": "int",
      "default": "3", "applies": "immediate",
-     "label": "Auto-episode threshold", "help": "Minimum edits in a session to trigger an auto-episode."},
-    {"key": "CARTOGRAPH_AUTO_RESEARCH", "group": "Auto-curation", "type": "bool",
-     "default": "1", "applies": "immediate",
-     "label": "Auto-research", "help": "Auto-draft a research note from a high-value session."},
+     "label": "Episode reminder threshold", "help": "Minimum edits in a session before the Stop-hook episode reminder fires."},
     {"key": "CARTOGRAPH_AUTO_RESEARCH_THRESHOLD", "group": "Auto-curation", "type": "int",
      "default": "2", "applies": "immediate",
-     "label": "Auto-research threshold", "help": "Minimum research-triggering events to spawn research."},
-    {"key": "CARTOGRAPH_DIGEST_THRESHOLD", "group": "Auto-curation", "type": "int",
-     "default": "3", "applies": "immediate",
-     "label": "Digest threshold", "help": "Min episodes/tag (in lookback) to suggest /promote at SessionStart."},
-    {"key": "CARTOGRAPH_DIGEST_LOOKBACK_DAYS", "group": "Auto-curation", "type": "int",
-     "default": "90", "applies": "immediate",
-     "label": "Digest lookback (days)", "help": "How far back the SessionStart digest scans episodes."},
+     "label": "Research reminder threshold", "help": "Minimum WebFetch/WebSearch events before the Stop-hook research reminder fires."},
 
-    # --- Headless spawn control ---
-    {"key": "CARTOGRAPH_HEADLESS_MAX", "group": "Headless control", "type": "int",
-     "default": "1", "applies": "immediate",
-     "label": "Max concurrent agents", "help": "Global cap on concurrent headless claude agents across all spawn points."},
-    {"key": "CARTOGRAPH_HEADLESS_DISABLE", "group": "Headless control", "type": "bool",
-     "default": "0", "applies": "immediate",
-     "label": "Disable headless spawns", "help": "1 = hard kill switch: no autonomous headless agent spawns at all."},
-    {"key": "CARTOGRAPH_CURATE_INTERVAL", "group": "Headless control", "type": "int",
-     "default": "1800", "applies": "restart",
-     "label": "Curate drain interval (s)", "help": "Seconds between batched curation drains (one agent drains the whole queue)."},
-    {"key": "CARTOGRAPH_CURATE_BATCH_MAX", "group": "Headless control", "type": "int",
-     "default": "8", "applies": "immediate",
-     "label": "Curate batch size", "help": "Max tasks one drain agent handles per pass; the rest drain next interval."},
-    {"key": "CARTOGRAPH_DRIFT_AUTOFIX", "group": "Headless control", "type": "bool",
+    # --- Background loops (deterministic; no tokens) ---
+    {"key": "CARTOGRAPH_DRIFT_AUTOFIX", "group": "Background loops", "type": "bool",
      "default": "1", "applies": "immediate",
      "label": "Drift auto-fix", "help": "0 = pause the background drift pass (deterministic re-anchor; no tokens). Surviving reports always wait for an active session."},
-    {"key": "CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "group": "Headless control", "type": "int",
+    {"key": "CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "group": "Background loops", "type": "int",
      "default": "1800", "applies": "restart",
-     "label": "Drift drain interval (s)", "help": "Seconds between drift-drain passes (auto-revise + drift-fix under the headless cap)."},
-    {"key": "CARTOGRAPH_BUILD_MIN_INTERVAL", "group": "Headless control", "type": "int",
+     "label": "Drift drain interval (s)", "help": "Seconds between deterministic drift-drain passes (git + python re-anchor; no tokens)."},
+    {"key": "CARTOGRAPH_BUILD_MIN_INTERVAL", "group": "Background loops", "type": "int",
      "default": "300", "applies": "restart",
      "label": "Min build interval (s)", "help": "Minimum seconds between static-site rebuilds (coalesces a fold storm into one build)."},
 
     # --- Push toggles ---
-    {"key": "CARTOGRAPH_AUTO_REVISE_PUSH", "group": "Push toggles", "type": "bool",
-     "default": "1", "applies": "immediate",
-     "label": "Auto-revise push", "help": "0 = auto-revise commits/stages bedrock but does not push."},
-    {"key": "CARTOGRAPH_BACKFILL_PUSH", "group": "Push toggles", "type": "bool",
-     "default": "1", "applies": "immediate",
-     "label": "Backfill push", "help": "0 = backfill commits/stages bedrock but does not push."},
     {"key": "CARTOGRAPH_DRAFT_PUSH", "group": "Push toggles", "type": "bool",
      "default": "1", "applies": "immediate",
      "label": "Draft push", "help": "0 = episode/research drafts written locally, not pushed."},
@@ -295,26 +258,6 @@ CONFIG_SCHEMA: tuple[dict[str, Any], ...] = (
     {"key": "CARTOGRAPH_CITE_CAP", "group": "Queue & tuning", "type": "int",
      "default": "10", "applies": "immediate",
      "label": "Cite cap", "help": "Max results per content layer in the /cite lookup."},
-
-    # --- Claude invocation flags (advanced) ---
-    {"key": "CARTOGRAPH_ASK_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "restart",
-     "label": "/api/ask flags", "help": "claude -p flags for the AskClaude endpoint. Empty = built-in default."},
-    {"key": "CARTOGRAPH_AUTO_REVISE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "immediate",
-     "label": "auto-revise flags", "help": "claude -p flags for auto-revise runs. Empty = built-in default."},
-    {"key": "CARTOGRAPH_BACKFILL_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "immediate",
-     "label": "backfill flags", "help": "claude -p flags for backfill runs. Empty = built-in default."},
-    {"key": "CARTOGRAPH_FOLD_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "immediate",
-     "label": "fold flags", "help": "claude -p flags for topic→bedrock folding. Empty = built-in default."},
-    {"key": "CARTOGRAPH_PROMOTE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "immediate",
-     "label": "promote flags", "help": "claude -p flags for episode→topic promotion. Empty = built-in default."},
-    {"key": "CARTOGRAPH_REVISE_CLAUDE_FLAGS", "group": "Claude flags", "type": "flags",
-     "default": "", "applies": "immediate",
-     "label": "revise flags", "help": "claude -p flags for rejected-topic revision. Empty = built-in default."},
 
     # --- Server & runtime ---
     {"key": "CARTOGRAPH_RELOAD", "group": "Server & runtime", "type": "bool",
@@ -610,78 +553,6 @@ def _drift_summary(repo: str, backfilled_sha: str | None) -> tuple[int, int]:
     return commits, files
 
 
-def _backfill_state(repo: str) -> dict[str, Any]:
-    """Read .backfill-log/<repo>.state.json — the live backfill job state.
-
-    backfill-bedrock.sh writes this file (running → done/error) so the job
-    is observable whether it was started from the UI or the CLI. A 'running'
-    state whose process is gone is reconciled to 'error' (crashed/killed).
-    """
-    state_file = PROJECT_ROOT / ".backfill-log" / f"{repo}.state.json"
-    if not state_file.exists():
-        return {"state": "idle"}
-    try:
-        st: dict[str, Any] = json.loads(state_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {"state": "idle"}
-    if st.get("state") == "running":
-        pid = st.get("pid")
-        alive = False
-        if isinstance(pid, int):
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except ProcessLookupError:
-                alive = False
-            except PermissionError:
-                alive = True  # exists, owned by another user
-        if not alive:
-            st["state"] = "error"
-            st["note"] = "backfill process is no longer running (crashed or killed)"
-    return st
-
-
-# Orchestration state for the sequential backfill-all run. Per-repo job
-# state stays file-based (backfill-bedrock.sh owns .backfill-log/*.state.json);
-# this only tracks the run-everything sequence itself.
-_backfill_all_lock = threading.Lock()
-_backfill_all_state: dict[str, Any] = {"state": "idle", "current": None, "repos": {}}
-
-
-def _backfill_all_worker(repos: tuple[str, ...]) -> None:
-    """Run backfill-bedrock.sh for each repo in turn, recording progress.
-
-    Sequential on purpose — each backfill is a ``claude -p`` run, and
-    parallel runs contend for token rate limits and the git index.
-    """
-    script = PROJECT_ROOT / "scripts" / "backfill-bedrock.sh"
-    for repo in repos:
-        if _backfill_state(repo).get("state") == "running":
-            with _backfill_all_lock:
-                _backfill_all_state["repos"][repo] = "skipped (already running)"
-            continue
-        with _backfill_all_lock:
-            _backfill_all_state["current"] = repo
-            _backfill_all_state["repos"][repo] = "running"
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["bash", str(script), repo],
-                cwd=str(PROJECT_ROOT),
-                capture_output=True,
-                timeout=3600,
-            )
-            outcome = "done" if result.returncode == 0 else f"error (exit {result.returncode})"
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            LOG.warning("backfill-all: %s failed: %s", repo, exc)
-            outcome = f"error ({exc.__class__.__name__})"
-        with _backfill_all_lock:
-            _backfill_all_state["repos"][repo] = outcome
-    with _backfill_all_lock:
-        _backfill_all_state["state"] = "done"
-        _backfill_all_state["current"] = None
-        _backfill_all_state["finished_at"] = datetime.now(tz=timezone.utc).isoformat()
-
-
 def _rebuild_site() -> bool:
     """Rebuild the static Astro site so a content mutation shows up.
 
@@ -713,7 +584,7 @@ _rebuild_running = False
 _rebuild_pending = False
 
 # Minimum seconds between the END of one build and the START of the next.
-# A burst of content mutations — e.g. the auto-promote fold cascade touching
+# A burst of content mutations — e.g. a promotion pass touching
 # dozens of bedrock files — would otherwise drive back-to-back `npm run build`
 # runs that peg the CPU. The cooldown coalesces every request that lands in
 # the window into a single build. An isolated edit after an idle period still
@@ -798,20 +669,12 @@ _BUNDLE_COMMIT_MESSAGES = {
 _AUTO_COMMIT_QUIET_SECONDS = 30
 _AUTO_COMMIT_INTERVAL_SECONDS = 20
 
-# Batched-curation drain. The SessionStart/Stop hooks now ENQUEUE curation work
-# (fold/promote/episode/research) under .cartograph/curation-queue/ instead of
-# spawning a `claude -p` agent per item. This loop drains the whole queue with
-# ONE headless agent at most once per interval — the debounced, single-flight
-# replacement for the per-item fan-out that swarmed the machine. Tune via
-# CARTOGRAPH_CURATE_INTERVAL (seconds); the floor is 60s.
-_CURATE_INTERVAL_SECONDS = max(60.0, float(os.environ.get("CARTOGRAPH_CURATE_INTERVAL", "1800")))
-
 # Drift auto-fix. upstream-sync.sh writes .drift-reports/<repo>.md at
 # SessionStart when upstream moved past the bedrock; topic-drift.sh writes
-# per-topic reports. This loop resolves them with drift-drain.sh — every
-# claude spawn under the lib/headless.sh cap — instead of waiting for a
-# human /auto-revise. Toggle via CARTOGRAPH_DRIFT_AUTOFIX (checked each
-# tick); interval via CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL (seconds, floor 60).
+# per-topic reports. This loop runs the deterministic drift-drain.sh pass
+# (git + python, no tokens); reports that survive wait for an active
+# session. Toggle via CARTOGRAPH_DRIFT_AUTOFIX (checked each tick);
+# interval via CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL (seconds, floor 60).
 _DRIFT_INTERVAL_SECONDS = max(60.0, float(os.environ.get("CARTOGRAPH_DRIFT_AUTOFIX_INTERVAL", "1800")))
 
 
@@ -836,14 +699,73 @@ def _content_fingerprint() -> tuple[int, float]:
     return count, newest
 
 
+def _rebuild_indexes() -> None:
+    """Refresh the retrieval indexes (frontmatter validation first, then the
+    file reverse-index and the BM25 corpus). Owned by the daemon since the
+    all-in-session rework: SessionStart no longer builds indexes, so this is
+    what keeps injection and the machine-wide MCP tools current. Best-effort.
+    """
+    steps = [
+        ["validate-frontmatter.py", "--root", str(PROJECT_ROOT),
+         "--errors-log", str(PROJECT_ROOT / ".cartograph" / "errors.log")],
+        ["build-file-index.py", "--quiet"],
+        ["build-search-index.py", "--quiet"],
+    ]
+    for step in steps:
+        try:
+            subprocess.run(  # noqa: S603
+                [sys.executable, str(PROJECT_ROOT / "scripts" / step[0]), *step[1:]],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=300,
+            )
+        except Exception as exc:  # noqa: BLE001 — index refresh must never crash a loop
+            LOG.warning("index rebuild (%s): %s", step[0], exc)
+    # Precompute the SessionStart digest (promotion candidates) so the hook
+    # just cats a cache instead of scanning every episode (~3s saved per
+    # session start).
+    try:
+        r = subprocess.run(  # noqa: S603
+            ["bash", str(PROJECT_ROOT / "scripts" / "digest.sh")],
+            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=120,
+        )
+        cache = PROJECT_ROOT / ".cartograph" / "state" / "digest-cache"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(r.stdout, encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("digest cache: %s", exc)
+
+
+def _upstream_sync_loop() -> None:
+    """Fetch every fork's upstream and refresh drift reports on an interval.
+
+    Owned by the daemon since the all-in-session rework: SessionStart no
+    longer fetches, so sessions start instantly and freshness holds even
+    when no session runs. Fires once at daemon start (a restart catches up
+    after downtime), then every 6 hours. Deterministic; never dies.
+    """
+    while True:
+        try:
+            r = subprocess.run(  # noqa: S603
+                ["bash", str(PROJECT_ROOT / "scripts" / "upstream-sync.sh")],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=600,
+            )
+            out = (r.stdout or r.stderr).strip().splitlines()
+            LOG.info("upstream-sync: %s", out[-1] if out else f"rc={r.returncode}")
+        except Exception as exc:  # noqa: BLE001 — loop must never die
+            LOG.warning("upstream-sync loop: %s", exc)
+        time.sleep(6 * 3600)
+
+
 def _content_watch_loop() -> None:
-    """Rebuild the site whenever content changes by ANY route — an API
-    mutation, a background script, a plain `git commit`, a hand edit.
+    """Rebuild the site + retrieval indexes whenever content changes by ANY
+    route — an API mutation, a background script, a plain `git commit`, a
+    hand edit.
 
     The endpoints and scripts also call _request_rebuild() directly (a
     faster path); this loop is the catch-all that guarantees a rebuild
-    even for routes nothing else watches — notably a manual commit.
+    even for routes nothing else watches — notably a manual commit. Runs
+    one index build at start so a daemon restart catches up.
     """
+    _rebuild_indexes()
     last = _content_fingerprint()
     while True:
         time.sleep(12)
@@ -853,11 +775,12 @@ def _content_watch_loop() -> None:
             continue
         if cur != last:
             last = cur
-            LOG.info("content change detected — requesting rebuild")
+            LOG.info("content change detected — requesting rebuild + index refresh")
             # Content moved → the cached /api/status stats are stale; drop
             # them now instead of waiting out the 30 s TTL.
             _status_payload.cache_clear()  # type: ignore[attr-defined]
             _request_rebuild()
+            _rebuild_indexes()
 
 
 def _git_porcelain(pathspecs: list[str]) -> list[tuple[str, str]]:
@@ -1012,53 +935,6 @@ def _auto_commit_loop() -> None:
                 )
 
 
-def _drain_curation_queue() -> dict[str, Any]:
-    """Run one batched curation drain. Best-effort, never raises.
-
-    Delegates to scripts/curate.sh, which hands the whole pending queue to a
-    single headless agent under the global cap (and is a no-op when the queue is
-    empty or an agent is already running). Returns a small status dict.
-    """
-    script = PROJECT_ROOT / "scripts" / "curate.sh"
-    try:
-        pending_before = subprocess.run(  # noqa: S603
-            ["bash", str(script), "count"],
-            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
-        ).stdout.strip()
-        r = subprocess.run(  # noqa: S603
-            ["bash", str(script), "drain"],
-            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=1800,
-        )
-        return {
-            "ok": r.returncode == 0,
-            "queued_before": pending_before,
-            "detail": (r.stderr or r.stdout)[-500:],
-        }
-    except Exception as exc:  # noqa: BLE001 — drain must never crash a caller/loop
-        LOG.warning("curate drain: %s", exc)
-        return {"ok": False, "detail": str(exc)}
-
-
-def _curate_loop() -> None:
-    """Periodically drain the curation queue with one batched agent.
-
-    The debounced, single-flight replacement for the old per-item spawn fan-out:
-    at most one headless agent per _CURATE_INTERVAL_SECONDS, and only when there
-    is queued work. Never dies.
-    """
-    while True:
-        time.sleep(_CURATE_INTERVAL_SECONDS)
-        try:
-            count = subprocess.run(  # noqa: S603
-                ["bash", str(PROJECT_ROOT / "scripts" / "curate.sh"), "count"],
-                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
-            ).stdout.strip()
-            if count and count != "0":
-                LOG.info("curate: %s task(s) queued — draining with one agent", count)
-                _drain_curation_queue()
-        except Exception as exc:  # noqa: BLE001 — loop must never die
-            LOG.warning("curate loop: %s", exc)
-
 
 def _drift_loop() -> None:
     """Periodically run the deterministic drift pass via drift-drain.sh.
@@ -1088,10 +964,36 @@ def _drift_loop() -> None:
             LOG.warning("drift loop: %s", exc)
 
 
+def _maintenance_loop() -> None:
+    """Run the daily maintenance pass (scripts/maintenance.sh) in-process.
+
+    Replaces the com.cartograph.maintenance launchd timer: the serve daemon
+    is already supervised 24/7, so an hourly staleness check is enough. The
+    pass runs when .cartograph/maintenance.log is over 24h old (or missing),
+    which self-heals missed days after sleep the same way an interval timer
+    would. Deterministic (the pass spawns no agents); never dies.
+    """
+    log_path = PROJECT_ROOT / ".cartograph" / "maintenance.log"
+    while True:
+        time.sleep(3600.0)
+        try:
+            age = time.time() - log_path.stat().st_mtime if log_path.exists() else float("inf")
+            if age < 24 * 3600:
+                continue
+            r = subprocess.run(  # noqa: S603
+                ["bash", str(PROJECT_ROOT / "scripts" / "maintenance.sh")],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=3600,
+            )
+            out = (r.stdout or r.stderr).strip().splitlines()
+            LOG.info("maintenance: %s", out[-1] if out else f"rc={r.returncode}")
+        except Exception as exc:  # noqa: BLE001 — loop must never die
+            LOG.warning("maintenance loop: %s", exc)
+
+
 def _request_rebuild() -> None:
     """Request a static-site rebuild without blocking the caller.
 
-    Every content mutation (promote, fold, review, mark-trivial, new
+    Every content mutation (promote, fold, review, new
     research/episode) leaves ``web/dist/`` stale. This schedules a rebuild
     on a background thread so the endpoint returns at once. Coalesced and
     throttled: a burst of mutations collapses to at most one in-flight build
@@ -1203,28 +1105,6 @@ def _git_publish(paths: list[str], message: str) -> bool:
         return push.returncode == 0
     except (subprocess.SubprocessError, OSError) as exc:
         LOG.warning("git publish failed: %s", exc)
-        return False
-
-
-def _spawn_revise_rejected(rel_path: str) -> bool:
-    """Spawn the revise-rejected agent (detached) for a just-rejected file.
-
-    ``claude -p`` reads the rejection note, researches the problem, fixes
-    the content, and resets it to pending re-review. Returns False if the
-    script is missing so the caller can fall back to a plain rejection.
-    """
-    script = PROJECT_ROOT / "scripts" / "revise-rejected.sh"
-    if not script.exists():
-        return False
-    try:
-        subprocess.run(  # noqa: S603, S607
-            ["bash", "-c", f'nohup bash "{script}" "{rel_path}" >/dev/null 2>&1 &'],
-            cwd=str(PROJECT_ROOT),
-            timeout=10,
-        )
-        return True
-    except (subprocess.SubprocessError, OSError) as exc:
-        LOG.warning("revise-rejected spawn failed: %s", exc)
         return False
 
 
@@ -1769,12 +1649,11 @@ def create_app() -> FastAPI:
                 "note": "approved.",
             }
 
-        # reject — record the note, then hand it to the revise-rejected
-        # agent: claude researches the note, fixes the content, and resets
-        # it to pending re-review.
-        # Accept either 'note' or 'notes'; the bulk-review front-ends sent
-        # 'notes' for a while and the silent 400 meant rejected topics
-        # never triggered revise-rejected.sh.
+        # reject — record the note. Revision is in-session work (the
+        # review queue keeps the note flagged until someone revises it);
+        # nothing spawns. Accept either 'note' or 'notes'; the bulk-review
+        # front-ends sent 'notes' for a while and the silent 400 meant
+        # rejections were dropped.
         note = body.get("note") or body.get("notes")
         if not isinstance(note, str) or not note.strip():
             raise HTTPException(
@@ -1789,17 +1668,11 @@ def create_app() -> FastAPI:
                 "rejected": True,
             },
         )
-        revising = _spawn_revise_rejected(rel)
         _request_rebuild()
         return {
             "ok": True,
-            "state": "revising" if revising else "rejected",
-            "note": (
-                "rejected — claude is revising it per your note; reload in a "
-                "few minutes to re-review."
-                if revising
-                else "rejected (revise agent unavailable — fix manually)."
-            ),
+            "state": "rejected",
+            "note": "rejected — revise it in-session; the review queue keeps it flagged.",
         }
 
     @app.post("/api/topic/{repo}/{topic}/touch")
@@ -1860,67 +1733,6 @@ def create_app() -> FastAPI:
             "drift_present": results,
             "stdout": result.stdout[-2000:],
             "stderr": result.stderr[-1000:],
-        }
-
-    @app.post("/api/auto-revise/{repo}")
-    def auto_revise_repo(repo: str) -> dict[str, Any]:
-        if repo not in REPOS:
-            raise HTTPException(status_code=404, detail=f"unknown repo: {repo}")
-        drift_file = DRIFT_DIR / f"{repo}.md"
-        if not drift_file.exists():
-            return {
-                "ok": True,
-                "status": "no_drift",
-                "message": f"no drift report for {repo}",
-            }
-        script = PROJECT_ROOT / "scripts" / "auto-revise.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="scripts/auto-revise.sh missing",
-            )
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["bash", str(script), repo],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                cwd=str(PROJECT_ROOT),
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(
-                status_code=504,
-                detail="auto-revise timed out (5 min)",
-            ) from None
-        closed = not drift_file.exists()
-        return {
-            "ok": result.returncode == 0,
-            "status": "closed" if closed else "still_open",
-            "exit_code": result.returncode,
-            "stdout": result.stdout[-4000:],
-            "stderr": result.stderr[-2000:],
-            "note": (
-                "drift closed — review `git diff` and commit when ready"
-                if closed
-                else "auto-revise did not close drift; manual review needed"
-            ),
-        }
-
-    @app.post("/api/auto-revise/all")
-    def auto_revise_all() -> dict[str, Any]:
-        if not DRIFT_DIR.exists():
-            return {"ok": True, "results": {}, "message": "no drift reports"}
-        repos_with_drift = sorted(
-            f.stem for f in DRIFT_DIR.glob("*.md") if f.stem in REPOS
-        )
-        results: dict[str, Any] = {}
-        for repo in repos_with_drift:
-            results[repo] = auto_revise_repo(repo)
-        closed = sum(1 for r in results.values() if r.get("status") == "closed")
-        return {
-            "ok": True,
-            "summary": f"{closed}/{len(results)} drift reports closed",
-            "results": results,
         }
 
     @app.get("/api/resolve-file/{repo}")
@@ -2395,14 +2207,8 @@ def create_app() -> FastAPI:
             if not m:
                 continue
             repo, slug = m.group(1), m.group(2)
-            # Skip if claude-fix already settled this revision in a job.
-            # Reuse the same _settled_kind machinery the queue resolver
-            # uses for anchor/drift, but for revision jobs we use
-            # 'revision' as kind. Jobs that complete successfully wipe
-            # their entry from this file via post-revision-clear (see
-            # scripts/topic-revision-fix.sh below). For now: the
-            # script's own clear-on-success is the source of truth, so
-            # if the file still has the entry, it's still pending.
+            # The entry clears when the revision lands (the clear
+            # endpoint drains it); while it is in the file it is pending.
             items.append({
                 "topic": topic_path,
                 "repo": repo,
@@ -2555,230 +2361,6 @@ def create_app() -> FastAPI:
             "author": gh_user,
             "prs": prs,
             "count": len(prs),
-        }
-
-    @app.post("/api/ask")
-    def ask_claude(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
-        """General-purpose Claude entry point.
-
-        Accepts ``{kind, repo?, context?, prompt}`` and invokes ``claude -p``
-        headless with a kind-specific framing. Used by AskClaude.tsx on
-        repo dashboards (kind=explore), topic viewers (kind=review-topic),
-        code viewer (kind=explain-code).
-        """
-        kind = body.get("kind", "general")
-        repo = body.get("repo")
-        context = body.get("context", "")
-        prompt = body.get("prompt", "").strip()
-        if not prompt:
-            raise HTTPException(status_code=400, detail="prompt is required")
-        if repo is not None and repo not in REPOS:
-            raise HTTPException(status_code=400, detail=f"unknown repo: {repo}")
-
-        framings = {
-            "explore": (
-                "You are helping a user explore the {repo} codebase. They have a "
-                "Cartograph knowledge base loaded — bedrock + topic notes + walkthroughs "
-                "under guides/{repo}/ and learn/. Read the relevant guides FIRST, "
-                "then point the user at specific file:line locations in workspace/{repo}/. "
-                "Be concrete. Cite file:line. Keep the answer short (under 400 words)."
-            ),
-            "review-topic": (
-                "You are reviewing the Cartograph topic note at: {context}\n\n"
-                "The user wants a second opinion on whether it's accurate, complete, "
-                "and useful. Read the topic note, then read the cited code in "
-                "workspace/{repo}/ to verify claims. Report: claims that hold up, "
-                "claims that are wrong or stale, gaps that should be filled. "
-                "Be specific. Cite file:line."
-            ),
-            "review-bedrock": (
-                "You are reviewing a Cartograph bedrock file at: {context}\n\n"
-                "Bedrock is the brief, dense layer loaded on every Claude turn. "
-                "Read the file, then verify against workspace/{repo}/ and the topic "
-                "notes under guides/{repo}/topics/. Report: claims that hold up, "
-                "claims that are wrong, structural gaps (per docs/quality-bar.md). "
-                "Be specific. Cite file:line."
-            ),
-            "review-episode": (
-                "You are reviewing the Cartograph episode at: {context}\n\n"
-                "Episodes are session worknotes — small (200-600w), task-driven. "
-                "Read it, check the files_touched are real, cross-reference any "
-                "claims against the relevant topic notes / bedrock. Suggest: tags "
-                "to add, whether it should supersede an older episode, whether it's "
-                "ripe to distill into a topic note (≥3 episodes same tag)."
-            ),
-            "review-draft": (
-                "You are reviewing the long-form essay draft at: {context}\n\n"
-                "Drafts are pre-publication outlines or partial bodies. The user "
-                "wants honest feedback on: the spine of the argument, factual "
-                "accuracy against workspace/{repo}/, missing nuance, and whether "
-                "it's ready to promote to a walkthrough at learn/walkthroughs/."
-            ),
-            "review-research": (
-                "You are reviewing the research note at: {context}\n\n"
-                "Research notes are intermediate — they capture external context, "
-                "comparisons to other tools, design rationale that doesn't yet "
-                "fit a topic note. Read it, fact-check claims against the cited "
-                "sources + workspace/{repo}/, surface what's stable enough to be "
-                "promoted to a topic note or draft, and what's still speculative."
-            ),
-            "review-paper": (
-                "You are reviewing the paper notes at: {context}\n\n"
-                "Paper notes are summaries + how-we-used-it for an external paper, "
-                "RFC, or design doc. Cross-reference the claims with workspace/{repo}/ "
-                "and related research notes. Surface: what we've actually adopted "
-                "from the paper, what's still speculative, what's contradicted by "
-                "the current code."
-            ),
-            "explain-code": (
-                "You are explaining the code file at workspace/{repo}/{context} to a user. "
-                "Cross-reference with the bedrock + relevant topic notes under guides/{repo}/ "
-                "so the user gets the conceptual framing alongside the line-level detail. "
-                "Be concrete. Use the user's question to focus."
-            ),
-            "general": (
-                "You are helping with Cartograph (a layered Markdown knowledge base for "
-                "JAX/XLA/Orbax/Tunix/Tokamax). Bedrock and topic notes are under "
-                "guides/<repo>/; walkthroughs and ramp-ups under learn/."
-            ),
-        }
-        framing = framings.get(kind, framings["general"])
-        framing = framing.format(repo=repo or "<repo>", context=context or "<context>")
-
-        prompt_file = subprocess.run(  # noqa: S603
-            ["mktemp", "-t", "cartograph-ask-prompt.XXXXXX"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        try:
-            Path(prompt_file).write_text(
-                f"# Framing\n\n{framing}\n\n# User question\n\n{prompt}\n",
-                encoding="utf-8",
-            )
-            flags = os.environ.get(
-                "CARTOGRAPH_ASK_CLAUDE_FLAGS",
-                '-p --output-format text --permission-mode acceptEdits '
-                '--allowedTools "Read,Glob,Grep,Bash"',
-            )
-            # Route through the headless control layer so the answer agent sets
-            # the recursion marker (its own hooks won't enqueue/spawn). FORCE=1
-            # bypasses the concurrency cap: a synchronous user question must
-            # never be held back by a background drain.
-            headless_lib = PROJECT_ROOT / "scripts" / "lib" / "headless.sh"
-            result = subprocess.run(  # noqa: S603
-                [
-                    "bash", "-c",
-                    f'source "{headless_lib}"; '
-                    f"CARTOGRAPH_HEADLESS_FORCE=1 cg_headless_run ask -- {flags} < {prompt_file}",
-                ],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(PROJECT_ROOT),
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=504, detail="claude timed out") from None
-        finally:
-            Path(prompt_file).unlink(missing_ok=True)
-
-        return {
-            "ok": result.returncode == 0,
-            "exit_code": result.returncode,
-            "answer": result.stdout.strip(),
-            "stderr": result.stderr[-1000:] if result.stderr else "",
-        }
-
-    @app.post("/api/curate")
-    def curate_now() -> dict[str, Any]:
-        """Drain the curation queue on demand with one batched agent.
-
-        Runs the drain on a background thread (it can take minutes) and returns
-        at once with how many tasks were pending. The drain self-limits via the
-        global headless cap, so triggering this while an agent is already
-        running is a safe no-op.
-        """
-        script = PROJECT_ROOT / "scripts" / "curate.sh"
-        try:
-            pending = subprocess.run(  # noqa: S603
-                ["bash", str(script), "count"],
-                cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=10,
-            ).stdout.strip()
-        except Exception:  # noqa: BLE001
-            pending = "?"
-        threading.Thread(target=_drain_curation_queue, daemon=True).start()
-        return {"status": "draining", "queued": pending}
-
-    @app.get("/api/promotions")
-    def list_promotions() -> dict[str, Any]:
-        """Chronological log of all auto-promotion events.
-
-        Scans the filesystem for items carrying any of these flags:
-          - episodes with `auto_drafted: true`        (session → episode)
-          - topic notes with `auto_promoted: true`    (episodes → topic)
-          - topic notes with `folded_into_bedrock:`   (topic → bedrock)
-        and returns them sorted newest-first, so the UI can render an
-        "everything cartograph compounded for you" feed.
-        """
-        events: list[dict[str, Any]] = []
-
-        # Episodes — auto_drafted
-        episodes_dir = PROJECT_ROOT / "episodes"
-        if episodes_dir.exists():
-            for ep in episodes_dir.rglob("*.md"):
-                fm = _read_frontmatter(ep)
-                if fm.get("auto_drafted") is True:
-                    events.append({
-                        "kind": "episode-auto-draft",
-                        "title": ep.stem,
-                        "repo": fm.get("repo"),
-                        "date": str(fm.get("date") or ""),
-                        "path": str(ep.relative_to(PROJECT_ROOT)),
-                        "url": f"/episodes/{ep.stem}/",
-                        "reviewed": fm.get("reviewed_by_human")
-                            if isinstance(fm.get("reviewed_by_human"), str)
-                            and fm.get("reviewed_by_human") not in ("", "~")
-                            else None,
-                        "rejected": fm.get("rejected") is True,
-                    })
-
-        # Topic notes — auto_promoted / folded_into_bedrock
-        guides = PROJECT_ROOT / "guides"
-        if guides.exists():
-            for topic in guides.rglob("topics/*.md"):
-                fm = _read_frontmatter(topic)
-                repo = topic.parent.parent.name
-                base = {
-                    "repo": repo,
-                    "title": topic.stem,
-                    "path": str(topic.relative_to(PROJECT_ROOT)),
-                    "url": f"/repo/{repo}/topics/{topic.stem}/",
-                    "reviewed": fm.get("reviewed_by_human")
-                        if isinstance(fm.get("reviewed_by_human"), str)
-                        and fm.get("reviewed_by_human") not in ("", "~")
-                        else None,
-                    "rejected": fm.get("rejected") is True,
-                }
-                if fm.get("auto_promoted") is True:
-                    events.append({
-                        **base,
-                        "kind": "topic-auto-promote",
-                        "date": str(fm.get("last_revised") or ""),
-                    })
-                folded = fm.get("folded_into_bedrock")
-                if folded and str(folded).strip() not in ("", "~"):
-                    events.append({
-                        **base,
-                        "kind": "topic-fold-bedrock",
-                        "date": str(folded),
-                    })
-
-        events.sort(key=lambda e: str(e.get("date") or ""), reverse=True)
-        return {
-            "ok": True,
-            "total": len(events),
-            "by_kind": {
-                "episode-auto-draft": sum(1 for e in events if e["kind"] == "episode-auto-draft"),
-                "topic-auto-promote": sum(1 for e in events if e["kind"] == "topic-auto-promote"),
-                "topic-fold-bedrock": sum(1 for e in events if e["kind"] == "topic-fold-bedrock"),
-            },
-            "events": events,
         }
 
     @app.get("/api/seams-graph")
@@ -3186,9 +2768,8 @@ def create_app() -> FastAPI:
         """Approve, reject, or discard an episode.
 
         Approve  → sets `reviewed_by_human: <today>`, clears `rejected:`
-        Reject   → records `rejected: true` + the note, then hands the
-                   episode to the revise-rejected agent (claude fixes it
-                   per the note and resets it to pending re-review)
+        Reject   → records `rejected: true` + the note; revision is
+                   in-session work (the review queue keeps it flagged)
         Discard  → deletes the episode file for good
         """
         if "/" in slug or ".." in slug:
@@ -3231,10 +2812,11 @@ def create_app() -> FastAPI:
             _request_rebuild()
             return {"ok": True, "state": "approved", "path": rel}
 
-        # reject — record the note, hand it to the revise-rejected agent.
-        # Accept either 'note' or 'notes' from the body — the front-end
-        # sent 'notes' for a while and the silent 400 meant the
-        # revise-rejected pipeline never spawned for bulk-review users.
+        # reject — record the note. Revision is in-session work (the
+        # review queue keeps the note flagged until someone revises it);
+        # nothing spawns. Accept either 'note' or 'notes' from the body — the
+        # front-end sent 'notes' for a while and the silent 400 meant
+        # rejections were dropped.
         note = body.get("note") or body.get("notes")
         if not isinstance(note, str) or not note.strip():
             raise HTTPException(
@@ -3249,76 +2831,25 @@ def create_app() -> FastAPI:
                 "rejected": True,
             },
         )
-        revising = _spawn_revise_rejected(rel)
         _request_rebuild()
         return {
             "ok": True,
-            "state": "revising" if revising else "rejected",
+            "state": "rejected",
             "path": rel,
-            "note": (
-                "rejected — claude is revising it per your note; reload in a "
-                "few minutes to re-review."
-                if revising
-                else "rejected (revise agent unavailable — fix manually)."
-            ),
-        }
-
-    @app.post("/api/topic/{repo}/{topic}/fold-into-bedrock")
-    def fold_topic_into_bedrock(repo: str, topic: str) -> dict[str, Any]:
-        """Fold a topic note's insight into the relevant bedrock section.
-
-        Surgical update — not a rewrite. Invokes claude -p with:
-          - the topic note's body
-          - the current bedrock for the repo
-          - docs/quality-bar.md as the contract
-        and asks claude to integrate the topic insight into the most
-        affected bedrock file (overview / architecture / conventions),
-        bump last_revised, and leave the topic note linked from the
-        bedrock section.
-
-        The topic note itself stays unchanged — it's the durable source
-        of the deep dive; bedrock is the dense pointer that references it.
-        """
-        if repo not in REPOS:
-            raise HTTPException(status_code=404, detail=f"unknown repo: {repo}")
-        if "/" in topic or ".." in topic:
-            raise HTTPException(status_code=400, detail="invalid topic")
-        topic_path = GUIDES_DIR / repo / "topics" / f"{topic}.md"
-        if not topic_path.exists():
-            raise HTTPException(status_code=404, detail="topic note not found")
-        script = PROJECT_ROOT / "scripts" / "fold-topic-to-bedrock.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="scripts/fold-topic-to-bedrock.sh missing",
-            )
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["bash", str(script), repo, topic],
-                capture_output=True, text=True, timeout=420,
-                cwd=str(PROJECT_ROOT),
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(
-                status_code=504, detail="fold timed out",
-            ) from None
-        _request_rebuild()
-        return {
-            "ok": result.returncode == 0,
-            "exit_code": result.returncode,
-            "stdout": result.stdout[-3000:],
-            "stderr": result.stderr[-1500:],
-            "note": "review git diff guides/<repo>/ before commit — bedrock should now reference this topic",
+            "note": "rejected — revise it in-session; the review queue keeps it flagged.",
         }
 
     @app.get("/api/promote-candidates")
-    def list_promote_candidates(threshold: int = 3) -> dict[str, Any]:
-        """Tags with ≥`threshold` non-distilled episodes — candidates for /promote.
+    def list_promote_candidates(threshold: int | None = None) -> dict[str, Any]:
+        """Tags with ≥threshold episodes not yet distilled under them.
 
-        Same logic the SessionStart digest hook surfaces. Returns the
-        tag, the count, and the list of episode slugs so the UI can show
-        them on /episodes/ with a "promote" button.
+        Same rule as scripts/digest.sh (the single promotion detector): an
+        episode distilled into topics/<slug>.md is excluded only from the
+        <slug> tag, so multi-tag episodes keep their signal for other
+        topics. Threshold defaults to CARTOGRAPH_PROMOTE_THRESHOLD.
         """
+        if threshold is None:
+            threshold = max(2, int(os.environ.get("CARTOGRAPH_PROMOTE_THRESHOLD", "3")))
         episodes_dir = PROJECT_ROOT / "episodes"
         if not episodes_dir.exists():
             return {"ok": True, "candidates": []}
@@ -3326,14 +2857,13 @@ def create_app() -> FastAPI:
         tag_to_episodes: dict[str, list[str]] = {}
         for ep in episodes_dir.rglob("*.md"):
             fm = _read_frontmatter(ep)
-            distilled = fm.get("distilled_into")
-            if distilled and str(distilled).strip() not in ("", "~"):
-                continue
+            distilled = str(fm.get("distilled_into") or "").strip()
+            distilled_slug = Path(distilled).stem if distilled not in ("", "~") else ""
             tags_raw = fm.get("tags", [])
             if not isinstance(tags_raw, list):
                 continue
             for tag in tags_raw:
-                if not isinstance(tag, str):
+                if not isinstance(tag, str) or tag == distilled_slug:
                     continue
                 tag_to_episodes.setdefault(tag, []).append(ep.stem)
 
@@ -3348,119 +2878,6 @@ def create_app() -> FastAPI:
         ]
         candidates.sort(key=lambda c: (-c["episode_count"], c["tag"]))
         return {"ok": True, "threshold": threshold, "candidates": candidates}
-
-    @app.post("/api/promote/{tag}")
-    def promote_tag(tag: str) -> dict[str, Any]:
-        """Distill ≥3 same-tag episodes into a topic note via claude -p.
-
-        Resolves the target repo by majority of the source episodes' repo
-        fields. Calls scripts/promote-tag.sh which:
-          1. lists matching episodes
-          2. drafts guides/<repo>/topics/<tag>.md
-          3. sets distilled_into: on each source episode
-        User reviews + edits + sets reviewed_by_human via the audit panel.
-        """
-        if "/" in tag or ".." in tag:
-            raise HTTPException(status_code=400, detail="invalid tag")
-        script = PROJECT_ROOT / "scripts" / "promote-tag.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500, detail="scripts/promote-tag.sh missing",
-            )
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["bash", str(script), tag],
-                capture_output=True, text=True, timeout=600,
-                cwd=str(PROJECT_ROOT),
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(
-                status_code=504, detail="promote-tag timed out",
-            ) from None
-        _request_rebuild()
-        if result.returncode != 0:
-            # Surface as 5xx so the UI doesn't falsely claim success
-            # when claude exited 0 but skipped Write (rc=4), the topic
-            # was written but episodes never got stamped (rc=5), or
-            # any other script failure.
-            tail_err = (result.stderr or "")[-1500:]
-            tail_out = (result.stdout or "")[-1500:]
-            raise HTTPException(
-                status_code=500,
-                detail=f"promote-tag exit {result.returncode}: {tail_err.strip() or tail_out.strip() or 'no output'}",
-            )
-        return {
-            "ok": True,
-            "exit_code": 0,
-            "stdout": result.stdout[-3000:],
-            "stderr": result.stderr[-1500:],
-            "note": "review the drafted topic note + each source episode's distilled_into before commit",
-        }
-
-    @app.post("/api/session/{slug}/mark-trivial")
-    def session_mark_trivial(slug: str) -> dict[str, Any]:
-        """Mark a session as 'trivial' so the missed-episode chip clears.
-
-        Patches the session log's frontmatter ``episode_written:`` field
-        to ``"not-needed"``. Idempotent.
-        """
-        if "/" in slug or ".." in slug:
-            raise HTTPException(status_code=400, detail="invalid slug")
-        log = _find_session_log(slug)
-        if log is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        text = log.read_text(encoding="utf-8")
-        # Replace just the episode_written line (the file already has one as ~).
-        new_text = re.sub(
-            r"^episode_written: .*$",
-            'episode_written: "not-needed"',
-            text,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        log.write_text(new_text, encoding="utf-8")
-        _request_rebuild()
-        return {"ok": True, "path": str(log.relative_to(PROJECT_ROOT))}
-
-    @app.post("/api/session/{slug}/write-episode")
-    def session_write_episode(slug: str) -> dict[str, Any]:
-        """Invoke claude -p to draft an episode from the session log.
-
-        Passes the session log content as context. Claude reads the
-        tool-use log, opens the files that were edited, and drafts a
-        short episode at episodes/<YYYY-MM>/<slug>.md. The user reviews
-        the draft before commit.
-        """
-        if "/" in slug or ".." in slug:
-            raise HTTPException(status_code=400, detail="invalid slug")
-        log = _find_session_log(slug)
-        if log is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        script = PROJECT_ROOT / "scripts" / "session-to-episode.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="scripts/session-to-episode.sh missing",
-            )
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["bash", str(script), slug],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(PROJECT_ROOT),
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(
-                status_code=504,
-                detail="session-to-episode timed out",
-            ) from None
-        _request_rebuild()
-        return {
-            "ok": result.returncode == 0,
-            "exit_code": result.returncode,
-            "stdout": result.stdout[-3000:],
-            "stderr": result.stderr[-1500:],
-            "note": "review the draft episode in episodes/ and edit before commit",
-        }
 
     @app.post("/api/research")
     def save_research_note(
@@ -3527,9 +2944,8 @@ def create_app() -> FastAPI:
     def rebuild_site_endpoint() -> dict[str, Any]:
         """Trigger a coalesced background rebuild of the static site.
 
-        For the background content scripts (backfill, auto-revise) to call
-        after they mutate bedrock — so the served pages refresh without
-        each script needing the npm toolchain itself.
+        Lets any flow that mutated content refresh the served pages
+        without needing the npm toolchain itself.
         """
         _request_rebuild()
         return {"ok": True, "note": "rebuild requested (background, coalesced)"}
@@ -3607,121 +3023,6 @@ def create_app() -> FastAPI:
             ),
         }
 
-    @app.post("/api/backfill/all")
-    def backfill_all() -> dict[str, Any]:
-        """Backfill every tracked repo sequentially in one background thread.
-
-        Registered before ``/api/backfill/{repo}`` so the literal ``all``
-        wins route matching. Each repo runs the same backfill-bedrock.sh
-        job the per-repo endpoint fires; poll ``GET /api/backfill/all/status``
-        for the sequence's progress.
-        """
-        script = PROJECT_ROOT / "scripts" / "backfill-bedrock.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="scripts/backfill-bedrock.sh missing",
-            )
-        with _backfill_all_lock:
-            if _backfill_all_state["state"] == "running":
-                return {
-                    "ok": False,
-                    "state": "running",
-                    "note": "a backfill-all run is already in progress",
-                }
-            _backfill_all_state.update({
-                "state": "running",
-                "current": None,
-                "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                "finished_at": None,
-                "repos": {r: "pending" for r in REPOS},
-            })
-        threading.Thread(
-            target=_backfill_all_worker,
-            args=(REPOS,),
-            daemon=True,
-            name="backfill-all",
-        ).start()
-        return {
-            "ok": True,
-            "state": "running",
-            "repos": list(REPOS),
-            "note": "backfill-all started — poll /api/backfill/all/status",
-        }
-
-    @app.get("/api/backfill/all/status")
-    def backfill_all_status() -> dict[str, Any]:
-        """Progress of the sequential backfill-all run.
-
-        ``repos`` is the orchestrator's view (pending/running/done/error/
-        skipped); ``jobs`` attaches each repo's own state file via the same
-        reader the per-repo status endpoint uses.
-        """
-        with _backfill_all_lock:
-            st: dict[str, Any] = {
-                k: (dict(v) if isinstance(v, dict) else v)
-                for k, v in _backfill_all_state.items()
-            }
-        st["jobs"] = {r: _backfill_state(r) for r in REPOS}
-        return st
-
-    @app.post("/api/backfill/{repo}")
-    def backfill_bedrock(repo: str) -> dict[str, Any]:
-        """Start a bedrock re-backfill in the background — non-blocking.
-
-        The backfill (``claude -p`` headless, 1-3 min) runs detached and
-        writes ``.backfill-log/<repo>.state.json``. This call returns in
-        milliseconds; poll ``GET /api/backfill/{repo}/status`` for progress.
-        """
-        if repo not in REPOS:
-            raise HTTPException(status_code=404, detail=f"unknown repo: {repo}")
-        script = PROJECT_ROOT / "scripts" / "backfill-bedrock.sh"
-        if not script.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="scripts/backfill-bedrock.sh missing",
-            )
-        if _backfill_state(repo).get("state") == "running":
-            return {
-                "ok": False,
-                "state": "running",
-                "note": "a backfill is already running for this repo",
-            }
-        # Detach: the inner shell backgrounds the real work via nohup and
-        # exits instantly, so this request returns at once and no zombie is
-        # left parented to the server. The script owns its own state file.
-        subprocess.run(  # noqa: S603
-            ["bash", "-c", f'nohup bash "{script}" "{repo}" >/dev/null 2>&1 &'],
-            cwd=str(PROJECT_ROOT),
-            timeout=10,
-        )
-        return {
-            "ok": True,
-            "state": "running",
-            "note": "backfill started — poll /api/backfill/<repo>/status",
-        }
-
-    @app.get("/api/backfill/{repo}/status")
-    def backfill_status(repo: str) -> dict[str, Any]:
-        """Live state of a repo's backfill job: idle | running | done | error.
-
-        Reads the state file backfill-bedrock.sh maintains, so it reflects
-        runs started from the UI *or* the CLI. For finished runs the claude
-        transcript tail is attached.
-        """
-        if repo not in REPOS:
-            raise HTTPException(status_code=404, detail=f"unknown repo: {repo}")
-        st = _backfill_state(repo)
-        log = st.get("log")
-        if log and st.get("state") in ("done", "error"):
-            try:
-                st["log_tail"] = Path(log).read_text(
-                    encoding="utf-8", errors="replace"
-                )[-4000:]
-            except OSError:
-                pass
-        return st
-
     @app.get("/api/lint")
     def lint_status() -> dict[str, Any]:
         """Run the content quality lint and return its JSON output.
@@ -3783,51 +3084,6 @@ def create_app() -> FastAPI:
                 return []
         return result.stdout
 
-    def _opinion_for(rel: str) -> dict[str, Any] | None:
-        """Fresh stored opinion for a note (auto-review or UI-triggered).
-
-        Fresh = the opinion file is newer than the note's last edit; an
-        edited note invalidates its old opinion and re-enters review.
-        """
-        if not rel:
-            return None
-        key = rel[:-3] if rel.endswith(".md") else rel
-        op_path = PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{key.replace('/', '_')}.json"
-        note_path = PROJECT_ROOT / rel
-        try:
-            if op_path.stat().st_mtime < note_path.stat().st_mtime:
-                return None
-            op = json.loads(op_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        if op.get("status") != "done" or not op.get("verdict"):
-            return None
-        return op
-
-    def _settle_reviewed(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-        """Drop approve-opinioned items from a pending list; annotate the rest.
-
-        An approve verdict settles the review — the human asked not to
-        re-review what auto-review already cleared. Reject-opinioned items
-        that were NOT auto-acted stay visible (contested calls), carrying
-        the opinion so triage starts pre-annotated.
-        """
-        kept: list[dict[str, Any]] = []
-        hidden = 0
-        for item in items:
-            op = _opinion_for(item.get("path") or "")
-            if op and op.get("verdict") == "approve":
-                hidden += 1
-                continue
-            if op:
-                item["opinion"] = {
-                    k: op.get(k)
-                    for k in ("verdict", "reason", "confidence", "auto_review", "finished_at")
-                    if op.get(k) is not None
-                }
-            kept.append(item)
-        return kept, hidden
-
     @app.get("/api/queue")
     def queue_json() -> dict[str, Any]:
         """Sectioned review queue. Composes cartograph_query results +
@@ -3848,13 +3104,13 @@ def create_app() -> FastAPI:
         # All non-rejected, non-reviewed episodes — auto-drafted OR
         # agent-authored. The previous query missed the latter, treating
         # claude-authored episodes as pre-blessed.
-        unreviewed_episodes, _ = _settle_reviewed(
-            _run_query(["layer=episode", "!reviewed_by_human", "!rejected"])
+        unreviewed_episodes = _run_query(
+            ["layer=episode", "!reviewed_by_human", "!rejected"]
         )
         sections.append(_sec("Episodes awaiting review", unreviewed_episodes))
 
-        unblessed, _ = _settle_reviewed(
-            _run_query(["layer=topic", "!reviewed_by_human", "!rejected"])
+        unblessed = _run_query(
+            ["layer=topic", "!reviewed_by_human", "!rejected"]
         )
         sections.append(_sec("Topics awaiting human review", unblessed))
 
@@ -3875,31 +3131,17 @@ def create_app() -> FastAPI:
                 })
         sections.append(_sec("Per-repo drift reports open", drift_repo))
 
-        # Filter drift + anchor entries through the per-job settled-state
-        # resolver (defined later in this same closure scope). Both
-        # /api/queue and /api/anchor-coverage filter through the same
-        # function so the home queue panel and /console/review/ BulkAll
-        # surface stay in lockstep — a run that completed on either
-        # surface disappears from both on the next request, regardless
-        # of whether the script's separate audit-JSON patch step ran.
-        settled_drift_set = _settled_drift()
-        settled_anchor_set = _settled_anchors()
-
         drift_topic = []
         topic_dir = PROJECT_ROOT / ".drift-reports" / "topics"
         if topic_dir.is_dir():
             for p in sorted(topic_dir.rglob("*.md")):
-                rel = str(p.relative_to(PROJECT_ROOT))
-                rs = _drift_repo_slug_from_path(rel)
-                if rs and rs in settled_drift_set:
-                    continue
-                drift_topic.append({"path": rel})
+                drift_topic.append({"path": str(p.relative_to(PROJECT_ROOT))})
         sections.append(_sec("Per-topic drift reports open", drift_topic))
 
         # Anchor-coverage gaps. The audit (scripts/anchor-coverage.py)
         # refreshes on SessionStart and dumps to .cartograph/state/.
         # Surface each topic with missing canonical anchors as a queue
-        # row so /console/review can act on it via /api/anchor-fix.
+        # row; anchor fixes are in-session work on the flagged topic.
         anchor_gaps = []
         ac_path = PROJECT_ROOT / ".cartograph" / "state" / "anchor-coverage.json"
         if ac_path.is_file():
@@ -3909,8 +3151,6 @@ def create_app() -> FastAPI:
                     for g in gaps:
                         slug = g.get("slug")
                         if not slug:
-                            continue
-                        if (repo, slug) in settled_anchor_set:
                             continue
                         anchor_gaps.append({
                             "path": f"guides/{repo}/topics/{slug}.md",
@@ -4382,41 +3622,40 @@ def create_app() -> FastAPI:
 
         Topics use the same rule.
         """
-        episodes, ep_hidden = _settle_reviewed(_run_query(
+        episodes = _run_query(
             ["layer=episode", "!reviewed_by_human", "!rejected"],
             fmt="json", limit=limit,
-        ))
+        )
         for e in episodes:
             e["kind"] = "episode"
-        topics, t_hidden = _settle_reviewed(_run_query(
+        topics = _run_query(
             ["layer=topic", "!reviewed_by_human", "!rejected"],
             fmt="json", limit=limit,
-        ))
+        )
         for t in topics:
             t["kind"] = "topic"
         return {
             "episodes": episodes,
             "topics": topics,
             "total": len(episodes) + len(topics),
-            "auto_approved_hidden": ep_hidden + t_hidden,
+            "auto_approved_hidden": 0,
         }
 
     def _spawn_fix_job(kind: str, repo: str, slug: str) -> dict[str, Any]:
-        """Fire-and-forget spawn of scripts/<kind>-fix.sh.
+        """Fire-and-forget spawn of scripts/repo-refresh.sh (kind "refresh").
 
-        Heavy fix jobs (drift on a topic with 40+ citations) can run
-        5-10 minutes. Synchronous subprocess.run blocks the HTTP request
-        for that long. Detached spawn writes status JSON to
+        A refresh (fetch + re-detect + deterministic drain) can take a
+        while on a big fork; a detached spawn writes status JSON to
         .cartograph/jobs/<kind>-<repo>-<slug>.json which the
         /api/job/{kind}/{repo}/{slug} endpoint polls.
         """
+        if kind != "refresh":
+            raise HTTPException(status_code=400, detail="kind must be refresh")
         if repo not in REPOS:
             raise HTTPException(status_code=400, detail=f"unknown repo: {repo}")
         if not _SLUG_RE.match(slug):
             raise HTTPException(status_code=400, detail="invalid slug")
-        # "refresh" runs repo-refresh.sh (repo-wide, slug fixed to "all");
-        # the other kinds follow the <kind>-fix.sh naming.
-        script_name = {"refresh": "repo-refresh.sh"}.get(kind, f"{kind}-fix.sh")
+        script_name = "repo-refresh.sh"
         script = PROJECT_ROOT / "scripts" / script_name
         if not script.exists():
             raise HTTPException(status_code=500, detail=f"{script_name} missing")
@@ -4448,16 +3687,6 @@ def create_app() -> FastAPI:
                 start_new_session=True,
             )
         return {"status": "running", "job": f"{kind}-{repo}-{slug}", "note": "spawned"}
-
-    @app.post("/api/anchor-fix")
-    def anchor_fix(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
-        """Fire-and-forget — poll /api/job/anchor/{repo}/{slug} for status."""
-        return _spawn_fix_job("anchor", (body.get("repo") or "").strip(), (body.get("slug") or "").strip())
-
-    @app.post("/api/drift-fix")
-    def drift_fix(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
-        """Fire-and-forget — poll /api/job/drift/{repo}/{slug} for status."""
-        return _spawn_fix_job("drift", (body.get("repo") or "").strip(), (body.get("slug") or "").strip())
 
     @app.post("/api/repo-refresh/{repo}")
     def repo_refresh(repo: str) -> dict[str, Any]:
@@ -4540,9 +3769,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/job/{kind}/{repo}/{slug}")
     def job_status(kind: str, repo: str, slug: str) -> dict[str, Any]:
-        """Poll the JSON status written by scripts/<kind>-fix.sh."""
-        if kind not in ("anchor", "drift", "refresh"):
-            raise HTTPException(status_code=400, detail="kind must be anchor, drift, or refresh")
+        """Poll the JSON status written by scripts/repo-refresh.sh."""
+        if kind != "refresh":
+            raise HTTPException(status_code=400, detail="kind must be refresh")
         if repo not in REPOS:
             raise HTTPException(status_code=400, detail=f"unknown repo: {repo}")
         if not _SLUG_RE.match(slug):
@@ -4551,14 +3780,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/drift-list")
     def drift_list() -> dict[str, Any]:
-        """All per-topic drift reports, grouped by repo. Used by the
-        bulk drift-fix page. Filtered through _settled_drift() so
-        topics whose latest drift-fix job is done (revised, bumped-only,
-        or no-op) disappear immediately — drift-fix.sh's report-removal
-        step is the persistent path, this resolver is the authoritative
-        view that won't drift if the removal didn't run.
+        """All per-topic drift reports, grouped by repo. Read-only:
+        surviving reports are in-session work (CLAUDE.md §4).
         """
-        settled = _settled_drift()
         out: dict[str, list[dict[str, str]]] = {}
         topic_dir = PROJECT_ROOT / ".drift-reports" / "topics"
         if topic_dir.is_dir():
@@ -4566,201 +3790,11 @@ def create_app() -> FastAPI:
                 if not repo_dir.is_dir():
                     continue
                 for p in sorted(repo_dir.glob("*.md")):
-                    if (repo_dir.name, p.stem) in settled:
-                        continue
                     out.setdefault(repo_dir.name, []).append({
                         "slug": p.stem,
                         "path": str(p.relative_to(PROJECT_ROOT)),
                     })
         return {"by_repo": out, "total": sum(len(v) for v in out.values())}
-
-    def _sanitize_path(rel: str) -> str:
-        # Mirror scripts/review-opinion.sh's sanitizer so the UI can compute
-        # the same filename key without re-asking the server.
-        s = rel.replace("/", "_")
-        if s.endswith(".md"):
-            s = s[:-3]
-        return s
-
-    @app.post("/api/review/opinion")
-    def review_opinion(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
-        """Fire-and-forget — poll /api/job/opinion?path=<rel> for status.
-
-        Spawns scripts/review-opinion.sh detached. Heavy notes can take 60+
-        seconds for claude to read and judge; we don't block the HTTP request.
-        """
-        path = (body.get("path") or "").strip()
-        if not path or ".." in path:
-            raise HTTPException(status_code=400, detail="path required")
-        script = PROJECT_ROOT / "scripts" / "review-opinion.sh"
-        if not script.exists():
-            raise HTTPException(status_code=500, detail="review-opinion.sh missing")
-
-        sanitized = _sanitize_path(path)
-        status_path = PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{sanitized}.json"
-        # Refuse duplicate spawn.
-        if status_path.is_file():
-            try:
-                existing = json.loads(status_path.read_text(encoding="utf-8"))
-                if existing.get("status") == "running":
-                    pid = existing.get("pid")
-                    if pid:
-                        try:
-                            os.kill(int(pid), 0)
-                            return {"status": "running", "job": f"opinion-{sanitized}", "note": "already in progress"}
-                        except (ProcessLookupError, PermissionError, ValueError):
-                            pass
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        log_path = PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{sanitized}.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "wb") as logf:
-            subprocess.Popen(  # noqa: S603
-                ["bash", str(script), path],
-                stdin=subprocess.DEVNULL,
-                stdout=logf, stderr=subprocess.STDOUT,
-                cwd=str(PROJECT_ROOT),
-                start_new_session=True,
-            )
-        return {"status": "running", "job": f"opinion-{sanitized}", "sanitized": sanitized}
-
-    @app.get("/api/job/opinion")
-    def opinion_status(path: str) -> dict[str, Any]:
-        """Poll the status JSON written by scripts/review-opinion.sh.
-
-        Pass the same `path` you sent to POST /api/review/opinion. The
-        server sanitizes identically.
-        """
-        if not path or ".." in path:
-            raise HTTPException(status_code=400, detail="path required")
-        sanitized = _sanitize_path(path)
-        return _read_status_resilient(PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{sanitized}.json")
-
-    def _cancel_pid(status_path: Path) -> dict[str, Any]:
-        """Kill the script process recorded in a 'running' status file
-        and rewrite the file to a terminal 'cancelled' state. Best-effort
-        — if the script already exited we still write the cancelled state
-        so the UI moves on.
-        """
-        if not status_path.is_file():
-            return {"status": "idle", "note": "no run on record"}
-        try:
-            payload = json.loads(status_path.read_text(encoding="utf-8") or "{}")
-        except json.JSONDecodeError:
-            payload = {}
-        pid = payload.get("pid")
-        killed = False
-        if pid:
-            try:
-                # The script runs in its own session (start_new_session=True
-                # on Popen), so signaling -pid hits the whole process group
-                # — bash + claude -p together. Plain os.kill(pid) only
-                # reaches bash and leaves claude orphaned.
-                os.killpg(int(pid), signal.SIGTERM)
-                killed = True
-            except (ProcessLookupError, PermissionError, ValueError):
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                    killed = True
-                except (ProcessLookupError, PermissionError, ValueError):
-                    pass
-        cancelled = {
-            "status": "error",
-            "error": "cancelled by user" + (" (signalled pid " + str(pid) + ")" if killed else " (pid already gone)"),
-            "started_at": payload.get("started_at"),
-            "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "elapsed_secs": payload.get("elapsed_secs"),
-            "cancelled": True,
-        }
-        try:
-            status_path.write_text(json.dumps(cancelled), encoding="utf-8")
-        except OSError:
-            pass
-        return cancelled
-
-    @app.post("/api/job/cancel")
-    def job_cancel(body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:  # noqa: B008
-        """Terminate a running fix/opinion job and mark its status cancelled.
-
-        Body shape (one of):
-          { "kind": "anchor" | "drift", "repo": "<r>", "slug": "<s>" }
-          { "kind": "opinion", "path": "<rel-path>" }
-        """
-        kind = (body.get("kind") or "").strip()
-        if kind in ("anchor", "drift"):
-            repo = (body.get("repo") or "").strip()
-            slug = (body.get("slug") or "").strip()
-            if repo not in REPOS or not _SLUG_RE.match(slug):
-                raise HTTPException(status_code=400, detail="invalid repo or slug")
-            sp = PROJECT_ROOT / ".cartograph" / "jobs" / f"{kind}-{repo}-{slug}.json"
-        elif kind == "opinion":
-            path = (body.get("path") or "").strip()
-            if not path or ".." in path:
-                raise HTTPException(status_code=400, detail="path required")
-            sp = PROJECT_ROOT / ".cartograph" / "jobs" / f"opinion-{_sanitize_path(path)}.json"
-        else:
-            raise HTTPException(status_code=400, detail="kind must be anchor, drift, or opinion")
-        return _cancel_pid(sp)
-
-    # ─────────────────────────────────────────────────────────────────
-    # Settled-job resolver. The single source of truth for "did claude
-    # finish this and is it pending re-display." Both /api/queue and
-    # /api/anchor-coverage filter through this, so the home queue card
-    # and the /console/review/ BulkAll surface can't drift apart — a
-    # run that completed shows up as resolved on both surfaces on the
-    # next request, regardless of whether the script's separate
-    # anchor-coverage.json patch step ran successfully.
-    # ─────────────────────────────────────────────────────────────────
-    _SETTLED_ANCHOR_ACTIONS = {"anchored", "no-op"}
-    _SETTLED_DRIFT_ACTIONS = {"revised", "bumped-only", "no-op"}
-
-    def _settled_kind(kind: str, terminal_actions: set[str]) -> set[tuple[str, str]]:
-        """Return the set of (repo, slug) pairs whose latest job for
-        this kind is in a terminal 'work landed / discarded' state.
-        Used to filter the audit JSON before exposing it to clients.
-        """
-        out: set[tuple[str, str]] = set()
-        jobs_dir = PROJECT_ROOT / ".cartograph" / "jobs"
-        if not jobs_dir.is_dir():
-            return out
-        prefix = f"{kind}-"
-        for sp in jobs_dir.glob(f"{prefix}*.json"):
-            try:
-                payload = json.loads(sp.read_text(encoding="utf-8") or "{}")
-            except (OSError, json.JSONDecodeError):
-                continue
-            if payload.get("status") != "done":
-                continue
-            if payload.get("action") not in terminal_actions:
-                continue
-            # Filename: <kind>-<repo>-<slug>.json
-            # <repo> is a known repo (REPOS); <slug> is the rest. We
-            # split on the first known repo prefix to handle slugs that
-            # themselves contain hyphens (e.g. 'msgpack-and-restore-decoupling').
-            stem = sp.stem
-            if not stem.startswith(prefix):
-                continue
-            rest = stem[len(prefix):]
-            for r in REPOS:
-                if rest.startswith(f"{r}-"):
-                    slug = rest[len(r) + 1:]
-                    out.add((r, slug))
-                    break
-        return out
-
-    def _settled_anchors() -> set[tuple[str, str]]:
-        return _settled_kind("anchor", _SETTLED_ANCHOR_ACTIONS)
-
-    def _settled_drift() -> set[tuple[str, str]]:
-        return _settled_kind("drift", _SETTLED_DRIFT_ACTIONS)
-
-    def _drift_repo_slug_from_path(rel: str) -> tuple[str, str] | None:
-        """`.drift-reports/topics/orbax/foo.md` → ('orbax', 'foo')."""
-        m = re.match(r"^\.drift-reports/topics/([^/]+)/(.+)\.md$", rel)
-        if not m:
-            return None
-        return m.group(1), m.group(2)
 
     @app.get("/api/anchor-coverage")
     def anchor_coverage_all() -> dict[str, Any]:
@@ -4768,11 +3802,6 @@ def create_app() -> FastAPI:
         scripts/anchor-coverage.py. Per-topic gaps are also surfaced
         inline on the topic detail page via the AnchorCoverageCallout
         island.
-
-        Filtered through _settled_anchors() so any (repo, slug) whose
-        latest anchor-fix job is done+anchored or done+no-op disappears
-        — the script's anchor-coverage.json patch step is just an
-        optimization; the resolver here is authoritative.
         """
         path = PROJECT_ROOT / ".cartograph" / "state" / "anchor-coverage.json"
         if not path.is_file():
@@ -4781,17 +3810,6 @@ def create_app() -> FastAPI:
             data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return {"topics_audited": 0, "total_gaps": 0, "gaps_by_repo": {}}
-        settled = _settled_anchors()
-        if not settled:
-            return data
-        gaps_by_repo = data.get("gaps_by_repo") or {}
-        filtered: dict[str, list[Any]] = {}
-        for repo, gaps in gaps_by_repo.items():
-            kept = [g for g in gaps if (repo, g.get("slug") or "") not in settled]
-            if kept:
-                filtered[repo] = kept
-        data["gaps_by_repo"] = filtered
-        data["total_gaps"] = sum(len(v) for v in filtered.values())
         return data
 
     @app.post("/api/stack/{repo}/restack")
@@ -4907,28 +3925,6 @@ def create_app() -> FastAPI:
         result.sort(key=lambda r: r.get("date") or "", reverse=True)
         return {"episodes": result}
 
-    @app.get("/api/diary")
-    def diary_list(limit: int = 14) -> dict[str, Any]:
-        """List recent diary entries (most recent first).
-
-        See claude-designs/cartograph/diary/README.md.
-        """
-        diary_dir = PROJECT_ROOT / "diary"
-        if not diary_dir.is_dir():
-            return {"entries": []}
-        entries = []
-        for p in sorted(diary_dir.rglob("*.md"), reverse=True):
-            if p.name == "README.md":
-                continue
-            fm = _read_frontmatter(p)
-            entries.append({
-                "path": str(p.relative_to(PROJECT_ROOT)),
-                "date": str(fm.get("date") or p.stem),
-            })
-            if len(entries) >= limit:
-                break
-        return {"entries": entries}
-
     if DIST_DIR.exists():
         app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="static")
     else:
@@ -4965,13 +3961,16 @@ def main() -> None:
     # pushed after a quiet period, so a fresh design or updated harness
     # doesn't sit local while the served pages go stale.
     threading.Thread(target=_auto_commit_loop, daemon=True).start()
-    # Batched-curation drain — the SessionStart/Stop hooks enqueue work; this
-    # loop drains it with ONE headless agent per interval (cap=1), replacing the
-    # per-item spawn fan-out that swarmed the machine.
-    threading.Thread(target=_curate_loop, daemon=True).start()
-    # Drift auto-fix — resolves open .drift-reports/ via drift-drain.sh on an
-    # interval, every claude spawn under the same headless cap as curation.
+    # Drift auto-fix — the deterministic drift-drain.sh pass (git + python,
+    # no tokens) on an interval; surviving reports wait for an active session.
     threading.Thread(target=_drift_loop, daemon=True).start()
+    # Daily maintenance — lint, curation agenda, anchor audit, session
+    # archive; fires when the last pass is >24h old (replaces the old
+    # launchd timer).
+    threading.Thread(target=_maintenance_loop, daemon=True).start()
+    # Upstream fetch — per-fork fetch + drift-report refresh at start and
+    # every 6h, so freshness no longer depends on a session running.
+    threading.Thread(target=_upstream_sync_loop, daemon=True).start()
     # uvicorn's reload mode imports by module string ("scripts.serve:app").
     # `python scripts/serve.py` only puts scripts/ on sys.path, not the
     # cartograph root — `app_dir` here prepends the root so both the

@@ -175,8 +175,10 @@ def main() -> int:
     lines = [
         "# Curation agenda (computed deterministically — zero tokens)",
         "",
-        f"Generated {time.strftime('%Y-%m-%d %H:%M')}Z. Each item needs an",
-        "active session's judgment; nothing here acts on its own.",
+        f"Generated {time.strftime('%Y-%m-%d %H:%M')}Z. Each item is a",
+        "CONTRACT for the next active session in that repo: merge the",
+        "near-dup, renew-or-supersede the decayed note, ingest the gap.",
+        "Nothing here acts on its own.",
         "",
     ]
     total = 0

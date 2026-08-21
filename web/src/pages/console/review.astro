@@ -1,41 +1,31 @@
 ---
 import Base from '~/layouts/Base.astro';
 import Card from '~/components/Card.astro';
-import BulkAll from '~/components/islands/BulkAll.tsx';
 import BulkReview from '~/components/islands/BulkReview.tsx';
-import AutoReviewAll from '~/components/islands/AutoReviewAll.tsx';
 ---
 
 <Base title="review everything · console" breadcrumbs={[{ label: 'console', href: '/console/' }, { label: 'review' }]}>
   <section class="mb-6">
     <h1 class="text-3xl font-bold tracking-tight">Review everything</h1>
     <p class="mt-2 text-muted text-base max-w-3xl">
-      One surface for every flagged item — auto-drafted episodes &amp;
-      unblessed topics (<strong>bless</strong>), topics with anchor-coverage
-      gaps (<strong>anchor</strong>), and topics with open per-topic drift
-      reports (<strong>drift</strong>). Claude does the right thing per type.
-      Type filters scope the run; per-row state survives reloads.
+      The bless backlog in one place: unblessed episodes and unblessed
+      topics, one at a time, with your verdict on each. Anchor-coverage gaps
+      and open drift reports are read-only elsewhere
+      (<a href="/console/" class="text-accent hover:underline">/console/</a>
+      and <code>/drift/&lt;repo&gt;/</code>); closing them is in-session work.
     </p>
   </section>
 
-  <Card eyebrow="01 / bulk all" title="Run claude across every flagged item" right="bless · anchor · drift" padded={false}>
-    <BulkAll client:load />
-  </Card>
-
-  <Card eyebrow="02 / bless-only" title="Auto-review bless backlog only" right="legacy · episode + topic verdicts" padded={false}>
-    <AutoReviewAll client:load />
-  </Card>
-
-  <Card eyebrow="03 / manual" title="Walk one at a time" right="claude pre-cooks · you decide" padded={false}>
+  <Card eyebrow="01 / manual" title="Walk one at a time" right="you read · you decide" padded={false}>
     <BulkReview client:load />
   </Card>
 
-  <Card eyebrow="04 / how this works" title="Per-type actions">
+  <Card eyebrow="02 / how this works" title="What each verdict does">
     <ul class="list-disc pl-5 text-sm text-muted space-y-1 max-w-3xl">
-      <li><strong>bless</strong> → <code>/api/review/opinion</code> drives <code>claude -p</code> for a verdict, then POSTs to <code>/api/episode/&lt;slug&gt;/review</code> or <code>/api/topic/&lt;r&gt;/&lt;s&gt;/review</code>. Rejected items kick off <code>revise-rejected.sh</code>.</li>
-      <li><strong>anchor</strong> → <code>/api/anchor-fix</code> drives <code>claude -p</code> with <code>Read,Edit,Bash,Glob,Grep</code> to add canonical <code>path:NNN</code> anchors in place.</li>
-      <li><strong>drift</strong> → <code>/api/drift-fix</code> drives <code>claude -p</code> to re-validate each citation against current upstream; revises sections that contradict reality, bumps <code>last_revised</code> otherwise, removes the drift report on success.</li>
-      <li>All three are fire-and-forget — the script writes <code>.cartograph/jobs/&lt;kind&gt;-&lt;repo&gt;-&lt;slug&gt;.json</code>, the UI polls every 3s. Reload-safe.</li>
+      <li><strong>approve</strong> &rarr; POSTs to <code>/api/episode/&lt;slug&gt;/review</code> or <code>/api/topic/&lt;r&gt;/&lt;s&gt;/review</code>, which stamps <code>reviewed_by_human:</code> on the file and drops it from the queue.</li>
+      <li><strong>reject</strong> &rarr; same endpoint with <code>verdict=reject</code> plus your note. The note is stamped on the file; rewriting it is a session's job (<code>/revise &lt;topic&gt;</code>).</li>
+      <li><strong>anchor gaps</strong> &rarr; surfaced by <code>/api/anchor-coverage</code>, fixed by adding <code>path:NNN</code> citations in-session.</li>
+      <li><strong>drift</strong> &rarr; the deterministic drain re-anchors line shifts on its own; a report you still see needs judgment, so resolve it in-session per CLAUDE.md §4.</li>
     </ul>
   </Card>
 </Base>

@@ -11,8 +11,7 @@ set shell := ["bash", "-cu"]
 # - `just code-server`      : start code-server in the background (idempotent)
 # - `just code-server-stop` : stop code-server
 # - `just down`             : stop code-server AND the cartograph server
-# - `just add-repo <upstream-org/repo>` : fork-setup + first bedrock backfill
-# - `just backfill <repo>`  : (re-)build bedrock for an already-added repo
+# - `just add-repo <upstream-org/repo>` : fork-setup + bedrock stubs (build via /backfill in a session)
 # - `just test`             : run the smoke-test suite (syntax + functional + lint)
 # - `just bootstrap`        : check + install missing dependencies (first-time setup)
 
@@ -68,10 +67,10 @@ test:
 bootstrap:
     bash "{{ROOT}}/scripts/bootstrap.sh"
 
-# Onboard a new tracked repo: fork + clone + remotes + hooks + bedrock stubs,
-# then (if no real bedrock yet) kick off the headless bedrock backfill in the
-# background. Idempotent — safe to re-run; skips backfill if real bedrock
-# already exists (detected via `backfilled_from_sha:` frontmatter).
+# Onboard a new tracked repo: fork + clone + remotes + hooks + bedrock stubs.
+# Idempotent — safe to re-run. Bedrock itself is built in-session with the
+# /backfill slash command (real bedrock is detected via
+# `backfilled_from_sha:` frontmatter).
 add-repo upstream:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -86,25 +85,12 @@ add-repo upstream:
     echo
     overview="{{ROOT}}/guides/$repo/overview.md"
     if [[ -f "$overview" ]] && grep -q '^backfilled_from_sha:' "$overview"; then
-      echo "→ bedrock already exists for '$repo' — skipping backfill"
-      echo "  to force rebuild: just backfill $repo"
+      echo "→ bedrock already exists for '$repo'"
+      echo "  to rebuild: run /backfill $repo in a Claude Code session"
       exit 0
     fi
-    echo "→ kicking off bedrock backfill in background"
-    mkdir -p "{{ROOT}}/.backfill-log"
-    nohup bash "{{ROOT}}/scripts/backfill-bedrock.sh" "$repo" >/dev/null 2>&1 &
-    bg=$!
-    disown $bg 2>/dev/null || true
-    sleep 1
-    latest_log="$(ls -t "{{ROOT}}/.backfill-log/"*-"$repo".log 2>/dev/null | head -1)"
-    echo "  backfill pid=$bg"
-    [[ -n "$latest_log" ]] && echo "  log: $latest_log"
-    echo "  watch progress: visit http://localhost:47777/repo/$repo/ (or tail the log above)"
-
-# Re-run bedrock backfill synchronously for an already-added repo. Streams
-# claude's output to your terminal.
-backfill repo:
-    bash "{{ROOT}}/scripts/backfill-bedrock.sh" "{{repo}}"
+    echo "→ fork ready; build the bedrock in-session:"
+    echo "  open a Claude Code session in workspace/$repo and run /backfill $repo"
 
 # Build the docx deliverable for a finalized proposal — design-doc look-and-feel,
 # investment-case content. Output: proposals/<repo>/<slug>.docx (served at

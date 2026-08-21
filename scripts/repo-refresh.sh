@@ -10,7 +10,7 @@
 #      session by the orientation injection.
 #
 # Writes status JSON to .cartograph/jobs/refresh-<repo>-all.json in the same
-# protocol as drift-fix.sh (running/pid, then done | error), so
+# protocol as the other job-status writers (running/pid, then done | error), so
 # GET /api/job/refresh/<repo>/all polls it. Callers: the repo-page button
 # (via POST /api/repo-refresh/<repo>).
 #

@@ -1,9 +1,8 @@
 // EpisodeReview — approve / reject / discard controls for an episode page.
 //
-// The chassis auto-drafts episodes at session-end. The human reviews them:
+// Sessions write episodes; the human reviews them here:
 //   approve  → sets reviewed_by_human:<today>
-//   reject   → records the note, then a claude agent researches + fixes
-//              the episode per the note and resets it to pending re-review
+//   reject   → records the note; a later session revises per the note
 //   discard  → deletes the episode for good
 //
 // Same brutalist + motion idiom as AuditPanel.
@@ -77,7 +76,7 @@ export default function EpisodeReview({
         setRejected(true);
         setReviewed(null);
         setResultMsg(
-          data.note ?? 'rejected — claude is revising it per your note.',
+          data.note ?? 'rejected — revise it in a session (/revise); the review queue keeps it flagged.',
         );
       }
       setPhase('success');
@@ -113,7 +112,7 @@ export default function EpisodeReview({
       {rejected && (
         <div className="font-mono text-xs mb-3">
           <span className="text-danger">✗ rejected</span>
-          <span className="text-muted"> · claude is revising it per your note</span>
+          <span className="text-muted"> · revise it in a session; the queue keeps it flagged</span>
         </div>
       )}
       {!reviewed && !rejected && initialRevisedAfterRejection && (
@@ -164,7 +163,7 @@ export default function EpisodeReview({
             transition={{ duration: 0.1 }}
             className={`${btn} border-danger bg-bg text-danger`}
           >
-            reject &amp; fix
+            reject
           </motion.button>
           <motion.button
             type="button"
@@ -198,7 +197,7 @@ export default function EpisodeReview({
             className="mt-3"
           >
             <div className="font-mono text-[10px] text-muted mb-1">
-              what's wrong? claude will research this and fix the episode.
+              what's wrong? the note is stamped on the episode for the revising session.
             </div>
             <textarea
               value={note}

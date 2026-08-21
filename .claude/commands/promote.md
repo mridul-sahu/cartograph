@@ -1,29 +1,46 @@
 ---
-description: Consolidate episodes sharing a tag into a single topic note
+description: Distill episodes sharing a tag into a new or existing topic note, then fold to bedrock (runs automatically; also invocable by hand)
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-The user wants to promote episodes tagged with: $ARGUMENTS
+Distill the episodes tagged: $ARGUMENTS
 
-Steps per plan §8 promotion workflow:
+This procedure is the AUTOMATIC promotion path. Sessions run it on their
+own when the distillation contract fires (SessionStart injection or the
+post-edit signal); a human typing `/promote <tag>` is just invoking the
+same steps early. Never ask permission to run it; never wait for review.
 
-0. **Acquire a worknote lease** so a parallel agent (or auto-promote)
-   doesn't stomp:
+0. **Acquire a worknote lease** so a parallel agent doesn't stomp:
 
-   !`bash ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/scripts/worknote.sh acquire "promote-$ARGUMENTS" --intent "/promote $ARGUMENTS"`
+   !`bash ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/scripts/worknote.sh acquire "promote-$ARGUMENTS" --intent "distill $ARGUMENTS"`
 
-   If the lease is busy (exit 75), STOP. Another agent is already
-   promoting this tag. Release the lease at the end (step 7).
+   If the lease is busy (exit 75), STOP — another session is already
+   distilling this tag. Release the lease at the end (step 7).
 
-1. Find all episodes with this tag that are NOT yet distilled:
-   !`grep -lE "tags:.*\b$ARGUMENTS\b" ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/episodes/**/*.md 2>/dev/null | xargs -I{} grep -L "^distilled_into:[[:space:]]*[^~[:space:]]" {} 2>/dev/null`
+1. Find ALL episodes carrying this tag (the tag IS the topic slug — if
+   the tag is a bad topic name, retag the episodes first, then distill):
+   !`grep -lE "tags:.*\b$ARGUMENTS\b" ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/episodes/**/*.md 2>/dev/null`
 
-2. Read each matching episode.
+   Episodes already distilled into a DIFFERENT topic still count: use
+   them as source material, but do not restamp their `distilled_into:`.
+   Skip only episodes already distilled into `topics/$ARGUMENTS.md`.
 
-3. Determine the dominant repo from the episodes' frontmatter `repo:` field.
-   (If episodes span multiple repos, ask the user which one to promote into.)
+2. Read each matching episode, and determine the dominant repo from
+   their frontmatter `repo:` field. (External-project repos like
+   `kernels` are fine: the topic lands under `guides/<project>/topics/`
+   and is reachable via `cartograph_search`.)
 
-4. Draft `${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/guides/<repo>/topics/$ARGUMENTS.md`:
+3. **Dedup BEFORE creating anything — merging beats a new file.** List
+   `guides/<repo>/topics/` and search for overlap:
+   !`ls ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/guides/*/topics/ 2>/dev/null`
+
+   Also run a concept search (`/find $ARGUMENTS` or `cartograph_search`).
+   If an existing topic already covers this ground — even under a
+   different slug — MERGE into it: weave the new insights into its body,
+   append the new episodes to its `distilled_from:`, bump
+   `last_revised:`, and stamp the sources' `distilled_into:` with the
+   EXISTING topic's path. Only when nothing covers the ground do you
+   create `guides/<repo>/topics/$ARGUMENTS.md`:
 
 ```markdown
 ---
@@ -45,23 +62,39 @@ supersedes: []
 
 ## Detail
 
-(Synthesize the episodes. Cite specific code paths. Cross-reference other
-topic notes or guides where useful.)
+(Synthesize the episodes. Cite specific `path/to/file.py:NNN` anchors.)
+
+## Related
+
+(Links that make the knowledge graph navigable: sibling topic notes this
+one touches, `guides/seams.md` entries if cross-repo, and the bedrock
+section it feeds. At least one link — an unlinked topic is an orphan.)
 
 ## Open questions / known gaps
-
-(Things the episodes touched on but didn't fully resolve.)
 ```
 
-5. For each source episode, edit its frontmatter to set:
-   `distilled_into: guides/<repo>/topics/$ARGUMENTS.md`
+4. For each source episode whose `distilled_into:` is still unset (`~`),
+   set it to the topic's path. Leave episodes already distilled
+   elsewhere untouched.
 
-6. Tell the user the topic note is drafted. Suggest they review and, if
-   blessed, set `reviewed_by_human: <today>` in the frontmatter.
+5. **Fold to bedrock NOW — no review gate.** Pick the ONE most relevant
+   bedrock file (`overview` / `architecture` / `conventions`), add or
+   refresh a 1-3 sentence reference cross-linked to the topic note under
+   the right section, bump its `last_revised:`, and stamp
+   `folded_into_bedrock: <bedrock path>` in the topic's frontmatter.
+   Surgical only: never restructure bedrock during a fold.
+
+   External projects have ONE lightweight bedrock file:
+   `guides/<project>/overview.md` (frontmatter `external: true`). Fold
+   there; create it with that frontmatter if it doesn't exist yet.
+
+6. Say in one line what happened ("distilled N episodes into <topic>
+   (merged|new), folded into <bedrock file>"). Do not ask for review;
+   the human vetoes by setting `rejected: true` if ever needed.
 
 7. **Release the lease**:
 
    !`bash ${CARTOGRAPH_ROOT:-$CLAUDE_PROJECT_DIR}/scripts/worknote.sh release "promote-$ARGUMENTS"`
 
-If fewer than 2 undistilled episodes exist for this tag, say so — promotion
-needs enough signal to be worth doing — and release the lease.
+If fewer than 2 undistilled-under-this-tag episodes exist, say so and
+release the lease — distillation needs enough signal to be worth doing.

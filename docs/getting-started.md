@@ -50,10 +50,8 @@ fork-setup: configured hugo
   bedrock         = overview.md architecture.md conventions.md
   topics dir      = guides/hugo/topics/
 
-→ kicking off bedrock backfill in background
-  backfill pid=98765
-  log: .backfill-log/20260527T180000Z-hugo.log
-  watch progress: visit http://localhost:47777/repo/hugo/
+→ fork ready; build the bedrock in-session:
+  open a Claude Code session in workspace/hugo and run /backfill hugo
 ```
 
 What just happened, in order:
@@ -69,26 +67,22 @@ What just happened, in order:
 6. Dropped stub bedrock files at `guides/hugo/{overview,architecture,
    conventions}.md` (placeholders Claude will rewrite during backfill).
 7. Created an empty `guides/hugo/topics/` directory.
-8. Started `scripts/backfill-bedrock.sh hugo` in the background — it
-   invokes `claude -p` headlessly against the
-   [quality bar](quality-bar.md).
+### Build the bedrock in-session
 
-### Watch backfill progress
+Open a Claude Code session in `workspace/hugo/` and run:
 
-Open the local UI:
-
-```bash
-just serve   # if not already running
-# then visit http://localhost:47777/repo/hugo/
+```
+/backfill hugo
 ```
 
-The repo page shows a "bedrock building…" badge and the live log.
-You can do other work in another terminal while it runs.
+The session re-explores the fork against the
+[quality bar](quality-bar.md) and rewrites the bedrock files while you
+watch and steer.
 
 For very large repos (XLA-scale, 500k+ LOC), the backfill is
-deliberately incomplete in one pass — `scripts/backfill-bedrock.sh`
-uses a subsystem-first approach. You'll typically run
-`just backfill <repo>` 3–5 times over a week to cover everything.
+deliberately incomplete in one pass — `/backfill` uses a
+subsystem-first approach. You'll typically run it 3–5 times over a
+week to cover everything.
 
 ### When backfill finishes
 

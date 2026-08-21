@@ -12,7 +12,6 @@
 // pane; click a match to load that file inline at the right line.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import AskClaude from './AskClaude';
 
 interface Props {
   repo: string;
@@ -104,19 +103,6 @@ export default function IdeView({ repo }: Props) {
       <aside className="flex flex-col gap-3 overflow-hidden min-h-0">
         <div className="brutal-card p-4 overflow-auto flex-1 min-h-0">
           <InsightsPane repo={repo} path={currentPath} onPick={(p) => navigate(p)} />
-        </div>
-        <div className="shrink-0">
-          <AskClaude
-            kind="explain-code"
-            repo={repo}
-            context={currentPath ?? ''}
-            title={currentPath ? 'ask claude about this file' : `ask claude about ${repo}`}
-            placeholder={
-              currentPath
-                ? `e.g., "What does line ${currentLine ?? '<n>'} do?" or "Why is this function structured this way?"`
-                : `pick a file first, or ask a general question about ${repo}`
-            }
-          />
         </div>
       </aside>
     </div>

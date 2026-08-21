@@ -23,8 +23,8 @@ repository. The tooling that brought you here is invisible to it.
 
 ## Cartograph discipline — HARD, every session compounds
 
-Cartograph already automates the compounding loop. Your job is to make the
-chassis's auto-drafts BETTER, not bypass it.
+Cartograph compounds through the sessions themselves. Your job is to
+write and revise the notes the chassis surfaces, not bypass the loop.
 
 ### Orientation order — Cartograph FIRST, code SECOND
 
@@ -43,28 +43,29 @@ by a topic note or episode you should read instead of re-deriving from
 the code. Skipping this is the same defect as ignoring the orientation
 injection (see CLAUDE.md §1a in cartograph root).
 
-The reverse index is rebuilt at every SessionStart by
-`scripts/build-file-index.py` and lives at
+The reverse index is rebuilt by the serve daemon whenever content
+changes (`scripts/build-file-index.py`) and lives at
 `.cartograph/index/by-file.json`. The orientation injection (every turn)
 already shows bedrock + matching topics / episodes / research; the
 slashes above are the on-demand drill-down.
 
 ### What fires automatically
 
-- **SessionStart** writes a session-log entry, drift-checks the bedrock
-  (per-repo and per-citation), surfaces `/promote` candidates, rebuilds
-  the file-path reverse index, runs `scripts/auto-promote.sh` (draft
-  topic notes from ≥3-same-tag episodes → fold reviewed topics into
-  bedrock), and (once per calendar day) writes today's `diary/` entry.
+- **SessionStart** writes a session-log entry, kicks the deterministic
+  per-repo drift pass, and surfaces `/promote` candidates from the
+  daemon's digest cache. Upstream fetch, index rebuilds, the diary, and
+  audits run in the serve daemon's loops, so sessions start instantly.
+  All deterministic; nothing spawns claude.
 - **Every turn** the `UserPromptSubmit` hook injects bedrock + topic
   notes + episodes + research notes for THIS repo. Treat as authoritative
   for what's already documented.
 - **Every Edit / Write** appends to the session log; the token-check
   hook scans your output for forbidden identity tokens.
-- **Stop** writes a "hint at stop" to the session log if ≥3 edits
-  happened with no episode, then auto-drafts an episode in the
-  background via `claude -p`. The drafted episode lands with
-  `auto_drafted: true`.
+- **Stop** prints the discipline scorecard — including the distillation
+  contract (tags over threshold you were expected to distill THIS
+  session) — and reminds you to write the episode (≥3 edits, none
+  written) or research note. Nothing drafts in the background: the
+  session that holds the context writes its own notes.
 
 ### Parallel-agent lease — when a slash already implies one
 
@@ -89,20 +90,20 @@ the lease.
 
 ### Default-approve semantics
 
-The chassis assumes the auto-promoted output is good unless the user
-explicitly **rejects** it. Rejection is opt-out, not opt-in:
+Knowledge flows with no review gate; the user's only lever is the veto.
+Rejection is opt-out, not opt-in:
 
 - An episode/topic with `rejected: true` is excluded from further
   promotion.
-- A topic with `reviewed_by_human:` set (any date) is eligible for
-  auto-fold into bedrock.
+- Topics fold into bedrock immediately at distillation time;
+  `reviewed_by_human:` is optional human signal, never a gate.
 
-If you read the injected context and notice an auto-drafted note is
+If you read the injected context and notice a drafted note is
 wrong or noisy, you have three choices in order of preference:
 
 1. **Revise it in place** — fix the claim, add citations, bump
-   `last_revised:`. Auto-promotion will then re-evaluate it on the
-   next SessionStart with your improvements.
+   `last_revised:`. The digest will re-surface its tag with your
+   improvements.
 2. **Mark it for human attention** — leave a `## review needed: <why>`
    section at the bottom; `/queue` and the Console UI surface it.
 3. **Reject it** — set `rejected: true` in frontmatter. Use sparingly
@@ -154,9 +155,9 @@ the orientation question that matters most.
 
 | Slash | Use when |
 |---|---|
-| `/episode <title>` | Manual episode — preempts the Stop-hook auto-draft |
+| `/episode <title>` | Write the episode while context is warm (the Stop hook only reminds) |
 | `/research <repo> <slug>` | External context worth keeping (comparisons, RFCs) |
-| `/paper <repo> <slug>` | Manual paper note (auto-draft fires if you used WebFetch / WebSearch — this is the override) |
+| `/paper <repo> <slug>` | Paper note when the session consulted external material (the Stop hook reminds) |
 | `/topic <repo> <slug>` | NEW topic from scratch when `/promote` doesn't apply (no episode chain yet) |
 | `/draft <slug>` | Start a `learn/drafts/` essay outline |
 | `/walkthrough <slug>` | Promote a draft or write a fresh walkthrough |

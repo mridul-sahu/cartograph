@@ -12,7 +12,6 @@
 // re-points the iframe at code-server with a payload that opens the file
 // inside the running workbench.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import AskClaude from './AskClaude';
 
 interface Props {
   repo: string;
@@ -513,21 +512,6 @@ export default function IdeShell({
               </li>
             </ul>
           </section>
-        </div>
-        <div className="shrink-0">
-          <AskClaude
-            kind="explore"
-            repo={repo}
-            context={currentFile ?? ''}
-            title={
-              currentFile ? `ask claude about this file` : `ask claude about ${repo}`
-            }
-            placeholder={
-              currentFile
-                ? `e.g., "What does this file do?" or "Where is X defined?"`
-                : `e.g., "Where does pjit lowering happen?"`
-            }
-          />
         </div>
       </aside>
     </div>
