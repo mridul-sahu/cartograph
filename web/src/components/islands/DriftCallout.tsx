@@ -3,7 +3,6 @@
 // Closes R2 (diff-aware revise view) from the UI audit.
 
 import { useEffect, useState } from 'react';
-import FixWithClaude from './FixWithClaude';
 import MarkdownView from './MarkdownView';
 
 export default function DriftCallout({ repo, slug }: { repo: string; slug: string }) {
@@ -51,7 +50,6 @@ export default function DriftCallout({ repo, slug }: { repo: string; slug: strin
         <span className="font-mono text-[10px] text-muted">
           Or run <code>/revise {slug}</code> in a workspace Claude session.
         </span>
-        <FixWithClaude kind="drift" repo={repo} slug={slug} compact />
       </div>
     </div>
   );

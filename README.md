@@ -5,25 +5,35 @@
 > because the loop is good. Expect rough edges around first-time setup;
 > file issues at <https://github.com/mridul-sahu/cartograph/issues>.
 
-**An external memory for Claude Code.** Cartograph is a layered notebook that
-sits next to your codebase and carries your understanding *forward* between
-sessions — so the model doesn't re-derive how your code works every single
-time you open it.
+**A self-evolving external memory for Claude Code.** Cartograph is a
+layered notebook that sits next to your codebases and carries your
+understanding *forward* between sessions, so the model doesn't re-derive
+how your code works every single time you open it. And it maintains
+itself: episodes distill into topics, topics fold into bedrock, upstream
+pulls get absorbed, and duplicates get merged, all executed by the
+sessions you were already running. Nothing spawns in the background;
+your only lever is the veto.
 
 ![cartograph home](screenshots/home.png)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  every prompt you send →                                                 │
-│    cartograph injects bedrock + topic notes + episodes + research        │
+│    cartograph injects the bedrock + topics + episodes + research         │
 │    that match what you're working on,                                    │
 │  every session you finish →                                              │
-│    cartograph captures what happened, reminds you to write the           │
-│    episode, flags topics whose code has drifted past them,               │
-│  every three episodes sharing a tag →                                    │
-│    cartograph asks you to promote them into a topic note,                │
-│  every blessed topic →                                                   │
-│    you fold back into bedrock with a one-line reference.                 │
+│    cartograph reminds it to write the episode and grades it on the       │
+│    contracts it was shown,                                               │
+│  every third episode sharing a tag →                                     │
+│    the session distills them into a topic (merging, not duplicating)     │
+│    and folds the result into bedrock, in the same breath,                │
+│  every upstream pull →                                                   │
+│    becomes an ingestion report: new knowledge the notes absorb,          │
+│  every day →                                                             │
+│    near-duplicates, decayed notes, and orphans surface as contracts,     │
+│    and distilled episodes retire from retrieval,                         │
+│  and from any project on the machine →                                   │
+│    any Claude session can query the corpus or capture work into it.      │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,7 +123,7 @@ Plus a `learn/` tree for **walkthroughs**, **ramp-ups**, and **drafts** —
 narrative content for explaining a codebase to someone new, and a
 `designs/` tree for formal design docs with d2 diagrams and rendered docx.
 
-### Eight Claude Code hooks (the chassis)
+### The hook chassis (five lifecycle events, one dispatcher each)
 
 Cartograph wires into Claude Code's hook system to make the loop automatic.
 You don't think about it; it just runs.
@@ -283,12 +293,24 @@ legacy full-bodies shape with `CARTOGRAPH_INJECT_MODE=full`, or disable
 injection entirely with `CARTOGRAPH_INJECT_DISABLE=1` (that switch exists
 for the eval harness — see feature 12).
 
-### 2. The compounding loop (episodes → topics → bedrock)
+### 2. The self-evolving loop (the machinery that runs itself)
+
+The deterministic chassis computes CONTRACTS; whichever session is
+already open executes them as part of its work. No background agents,
+no review gates, no manual curation commands. Five verbs:
+
+| verb | trigger | what the session does |
+|---|---|---|
+| **capture** | work happened | writes the episode (Stop hook reminds; word ceilings enforced) |
+| **distill** | a tag crosses threshold | merges episodes into an existing topic where one covers the ground, else creates one, with mandatory graph links |
+| **fold** | a topic lands or grows | immediately writes a 1-3 sentence cross-linked reference into bedrock, replacing stale text under a word budget |
+| **ingest** | upstream moved (daemon fetch, 6h) | absorbs the new behavior into covered notes and captures hot uncovered areas |
+| **compact** | the daily agenda | merges near-duplicates, renews or supersedes decayed notes, links orphans; distilled episodes retire from search |
 
 Episodes are cheap: write one whenever a session produces a durable
-insight. The Stop hook reminds you. (There is no background drafting:
-the active session, which already holds the context, writes its own
-notes.)
+insight. The Stop hook reminds you, then grades the session on the
+contracts it was shown. (There is no background drafting: the active
+session, which already holds the context, writes its own notes.)
 
 ```
 You write 3+ episodes tagged `pjit-axes` over a few weeks.
@@ -307,20 +329,44 @@ Drafted output shows up in `/queue` and the inbox UI. **Veto-only semantics:** a
 explicitly `rejected: true` is eligible for further promotion. You opt
 out, not in.
 
-### 3. Drift detection + auto-revision
+### 2b. Machine-wide reach (every project feeds the base)
+
+The MCP server, registered at user scope, makes cartograph a service for
+the whole machine, not a folder you have to cd into:
+
+- A session working in ANY project can query the corpus
+  (`cartograph_search`), pull a repo's orientation
+  (`cartograph_bedrock`), and check freshness (`cartograph_drift`).
+- The same session can capture its work back
+  (`cartograph_capture`): episodes, research notes, or the project's
+  own lightweight single-file bedrock. One schema-correct write door:
+  provenance stamped, catch-all tags filtered, ceilings enforced,
+  indexes rebuilt on write so the note is findable seconds later.
+- External projects earn a first-class place: their captures count
+  toward distillation contracts like any episode, their topics land
+  under `guides/<project>/topics/`, and their bedrock forms from use
+  even if nobody seeds it by hand.
+
+The knowledge base stops being per-repo notes and becomes the memory of
+everything you build.
+
+### 3. Ingestion (upstream pulls become new knowledge)
 
 Every bedrock file records `backfilled_from_sha:` — the upstream sha it
 was written against. The serve daemon fetches upstream every 6 hours; `drift-check.sh`
-compares the recorded sha to the current tip; if upstream moved,
-`.drift-reports/<repo>.md` is written and the orientation hook surfaces
-it every turn until the drift is closed.
+compares the recorded sha to the current tip; if upstream moved, an
+ingestion report at `.drift-reports/<repo>.md` shows where the change
+concentrated, which covered notes must learn the new behavior, and which
+hot new areas have no note yet. The orientation hook surfaces it every
+turn until the change is absorbed: a pull is new knowledge to take in,
+not just citations to defend.
 
 Topic-note drift is finer-grained: `topic-drift.sh` checks each cited
 file individually. `/revise <topic>` reads the per-citation drift report
 and pre-stages `git log -p` for each changed citation — you edit with
 the diff already in front of you.
 
-Three ways drift gets closed:
+Three ways an upstream pull gets absorbed:
 
 - **Mechanically (zero tokens):** the server runs a deterministic drift
   pass on an interval (default 30 min): re-detection plus `reanchor.py`,
@@ -396,7 +442,7 @@ All use `--force-with-lease`, never raw `--force`. The local UI's
 main" / "diff vs parent" GitHub compare links, and a "run cascade"
 button that fires `gs upstack restack` from the current HEAD.
 
-### 6. The local UI (37 surfaces on `:47777`)
+### 6. The local UI (`:47777`)
 
 A static-built Astro + React site backed by a FastAPI server. Designed
 for the human-shaped views — what slash commands don't cover.
@@ -427,7 +473,7 @@ plus navigation commands.
 
 ![cross-repo seams graph](screenshots/seams.png)
 
-![review inbox](screenshots/inbox.png)
+![the console — contracts, candidates, and the veto surface](screenshots/console.png)
 
 ### 7. VS Code / code-server extension
 
@@ -517,7 +563,7 @@ formal docx once it's built.
 | **Stacked PRs** | `/stack` • `/stack-new` • `/stack-pr` • `/stack-submit` • `/stack-restack` • `/stack-sync` |
 | **Hygiene** | `/doctor` — verify all forks • `/lint` — content quality bar |
 
-### 11. Eighty-two API endpoints
+### 11. Sixty-five API endpoints
 
 Everything the slash commands and UI do is exposed as a JSON API on
 `http://localhost:47777/api/`. Useful if you want to build your own

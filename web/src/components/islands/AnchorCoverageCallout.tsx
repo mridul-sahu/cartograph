@@ -6,7 +6,6 @@
 // can act on it without hunting through /queue.
 
 import { useEffect, useState } from 'react';
-import FixWithClaude from './FixWithClaude';
 
 interface Missing { file: string; episode_signal: number }
 interface Gap { topic_path: string; slug: string; anchored_count: number; missing: Missing[] }
@@ -63,7 +62,7 @@ export default function AnchorCoverageCallout({ repo, slug }: { repo: string; sl
               </li>
             ))}
           </ul>
-          <FixWithClaude kind="anchor" repo={repo} slug={slug} />
+          <div className="font-mono text-[10px] text-muted mt-2">anchor fixes are in-session work: open a session in the fork and revise the topic</div>
         </div>
       )}
     </div>

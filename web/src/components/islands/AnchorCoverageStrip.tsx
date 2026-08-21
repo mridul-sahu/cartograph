@@ -4,7 +4,6 @@
 // one-line summary with deep links to the affected topic notes.
 
 import { useEffect, useState } from 'react';
-import FixWithClaude from './FixWithClaude';
 
 interface Missing { file: string; episode_signal: number }
 interface Gap { topic_path: string; slug: string; anchored_count: number; missing: Missing[] }
@@ -50,7 +49,6 @@ export default function AnchorCoverageStrip({ repo }: { repo: string }) {
                 {g.missing.length > 4 && ` +${g.missing.length - 4} more`}
               </span>
             </div>
-            <FixWithClaude kind="anchor" repo={repo} slug={g.slug} compact />
           </li>
         ))}
       </ul>
