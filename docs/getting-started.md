@@ -123,7 +123,7 @@ Anthropic (or any CARTOGRAPH_FORBIDDEN_EXTRAS) in commits, branches, PRs,
 or code comments.
 
 [DISCIPLINE — read this on every turn]
-Cartograph compounds AUTOMATICALLY...
+Cartograph is a self-evolving knowledge base and YOU are its engine...
 
 [guides/hugo/overview.md]    ← full file
 [guides/hugo/architecture.md] ← full file
@@ -198,11 +198,10 @@ Fill in the body — what was the task, what files mattered, what was
 the surprise, what would help a future you. **Bar is low** — if you
 wished you'd known something at the start, write it.
 
-**If you forget the `/episode`** — that's fine. The Stop hook
-detects ≥3 edits with no episode written and auto-drafts one in the
-background via `claude -p`. The auto-drafted episode has
-`auto_drafted: true` and shows up in the inbox at
-`http://localhost:47777/console/inbox/` for your review.
+**If you forget the `/episode`** — the Stop hook detects ≥3 edits
+with no episode written and reminds the session, with a discipline
+scorecard, to write one before it ends. Nothing drafts in the
+background: the session that holds the context writes its own notes.
 
 When you close the session, the chassis commits + pushes the new
 episode automatically (via `session-log.sh publish_content`). You
@@ -213,8 +212,8 @@ don't `git add` cartograph content yourself.
 ## Session 3 — the loop starts to compound
 
 Over the next few sessions, you keep working on hugo. Each session
-that produces an insight, you write an episode (or the auto-drafter
-catches one). After three or four sessions, you'll have a handful of
+that produces an insight, you write an episode (the Stop hook reminds
+if you forget). After three or four sessions, you'll have a handful of
 episodes — some about `page.Resources`, some about templates, some
 about config inheritance.
 
@@ -225,36 +224,31 @@ touch `page.Resources` behavior, tag all of them with
 `page-resources`. The promotion system watches for ≥3 same-tag
 episodes that aren't yet distilled.
 
-### When promotion fires
+### When promotion fires (automatically)
 
-Next time you open a Claude session (any cwd under cartograph), the
-`SessionStart` hook runs `scripts/digest.sh`, which counts tags and
-surfaces:
-
-```
-[digest] promotion candidates:
-  • 3 episodes tagged `page-resources` not yet distilled
-    → run `/promote page-resources`
-```
-
-You run:
+The moment the third `page-resources` episode lands (the post-edit
+signal), or at the next SessionStart (the digest), the session gets a
+binding distillation contract:
 
 ```
-/promote page-resources
+[cartograph-digest] DISTILLATION CONTRACT — ...
+    3 × repo=hugo   tag=page-resources    -> distill (automatic)
 ```
 
-Claude reads all three episodes, drafts
-`guides/hugo/topics/page-resources.md` with a `distilled_from:` list
-pointing at the source episodes, and marks each source episode's
-`distilled_into:` field.
+The session then runs the distillation itself, no typing required: it
+checks for an existing topic covering the ground (merging if one
+does), otherwise drafts `guides/hugo/topics/page-resources.md` with a
+`distilled_from:` list and a `## Related` section, marks each source
+episode's `distilled_into:`, and immediately folds a 1-3 sentence
+cross-linked reference into the hugo bedrock.
 
-### Review the topic
+### Review the topic (optional)
 
-Open the local UI, navigate to `/console/review/` (or
-`http://localhost:47777/repo/hugo/topics/page-resources/`). You see
-the auto-drafted topic with a thumbs-up / thumbs-down. Read it; if
-it's accurate, click bless (sets `reviewed_by_human:` to today's
-date). If it needs edits, edit in place.
+Nothing waits on your review: the topic already folded into bedrock
+when it was distilled. If you want to look, open
+`/console/review/` (or the topic page) and either bless it
+(`reviewed_by_human:` as a quality signal) or veto it
+(`rejected: true` stops it from flowing further). Edits go in place.
 
 ### What happens next
 
@@ -278,9 +272,12 @@ diff already in front of you.
 
 You now have the loop. From here:
 
-- **Keep writing episodes.** The Stop hook nudges; respond.
-- **Run `/freshness` weekly** to see which forks have upstream drift.
-- **Run `/queue` daily** to see auto-drafts awaiting your review.
+- **Keep writing episodes.** The Stop hook nudges; the loop does the
+  rest (distillation, folding, compaction) on its own contracts.
+- **Run `/freshness` weekly** to see which forks have upstream change
+  waiting to be ingested.
+- **Run `/queue`** when you want the open-contracts view (pending
+  drafts, ingestion reports, lint debt); nothing waits on you.
 - **Use `/find <natural query>`** when the orientation injection
   doesn't surface something obvious — BM25 catches semantic matches
   keyword overlap misses.
@@ -300,8 +297,8 @@ small episode noting what changed. The fix is a short detour, not a
 hand-off.
 
 This is the difference between a notebook that gets *better* and a
-notebook that just gets *bigger*. The framework gives you all the
-mechanism — promotion, drift detection, auto-revise — but the
+notebook that just gets *bigger*. The framework runs the loop —
+automatic distillation, folding, ingestion, compaction — but the
 single human discipline is **fix what you find, in the moment**.
 
 ---
@@ -320,19 +317,19 @@ episode is *task-driven, from this session* — what you learned. A
 research note is *external context worth keeping* — a blog post, an
 RFC, a comparison with another project. Different audiences.
 
-**"What if I disagree with an auto-drafted episode?"** Edit it in
-place, or set `rejected: true` in frontmatter to opt it out of
-future promotion. The framework default-approves; you opt out.
+**"What if I disagree with a drafted episode?"** Edit it in place, or
+set `rejected: true` in frontmatter to opt it out of future
+promotion. The framework is veto-only; you opt out, never in.
 
 **"Can I have a topic note without going through episodes first?"**
 Yes — `/topic <repo> <slug>` scaffolds one from scratch. Use this
 when you have a stable mental model worth recording but haven't
 generated three episodes yet.
 
-**"What if my fork is behind upstream?"** Either the
-`upstream-sync.sh` hook hasn't run (it runs at SessionStart from
-inside the fork), or it ran but couldn't fast-forward (uncommitted
-changes, not on the tracked branch). Run `bash scripts/upstream-sync.sh hugo`
+**"What if my fork is behind upstream?"** The serve daemon fetches
+every 6 hours and writes an ingestion report when upstream moved; if
+the fork itself couldn't fast-forward (uncommitted changes, not on
+the tracked branch), run `bash scripts/upstream-sync.sh hugo`
 manually to see what's blocking.
 
 ---

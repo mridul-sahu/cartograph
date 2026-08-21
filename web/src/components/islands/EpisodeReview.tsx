@@ -126,7 +126,7 @@ export default function EpisodeReview({
       )}
       {!reviewed && !rejected && !initialRevisedAfterRejection && (
         <div className="font-mono text-xs text-muted mb-3">
-          pending review · default-approved for /promote until rejected
+          flows on its own (distill + fold) · veto here if wrong
         </div>
       )}
 

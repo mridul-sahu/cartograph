@@ -25,13 +25,12 @@ what fires and what it captures.
               ≥3 edits)                                                                   last_revised bumped
                   │                                       │                                  │
                   ▼                                       ▼                                  ▼
-              user reviews              user reviews + approves (default-approve)        user reviews diff
-              approve / reject          → unblocks bedrock fold                          → commits when satisfied
-              (UI buttons)              reject → halt promotion forever
+              user may veto             folds to bedrock IMMEDIATELY,                    user may veto
+              (rejected: true)          same session, no review gate                     (rejected: true)
 ```
 
-**Default-approve**: unreviewed auto-drafts are ELIGIBLE for the next
-step. Rejection is opt-out, not opt-in.
+**Veto-only**: nothing waits for approval; every note is eligible for
+the next step unless the human sets `rejected: true`.
 
 ## The four lifecycle events
 
@@ -189,8 +188,8 @@ seams.md  ←─(append-only)──  any layer whose insight crosses repos
 | Transition | Mechanism | What's automatic | What's manual |
 |---|---|---|---|
 | **session → episode** | Stop hook → `episode-prompt.sh` REMINDS the session (≥3 edits + no episode for today) to write its own episode via `/episode` or a direct Write. No background drafting exists. | the reminder + the discipline scorecard | the session (or the user) writes the episode itself; threshold via `CARTOGRAPH_AUTO_EPISODE_THRESHOLD=N` |
-| **3+ episodes → topic note** | `/promote <tag>` in a session: the session reads all matching non-distilled episodes, drafts `guides/<repo>/topics/<tag>.md`, sets `distilled_into:` on each source | finding the candidates (`digest.sh` SessionStart hook, `/api/promote-candidates`) | the human decision to promote (it's editorial) and the drafting itself; the user reviews the drafted topic note + signs off via the audit panel (`reviewed_by_human`) |
-| **topic note → bedrock revision** | Two in-session paths: (1) **on contradiction** — resolve the drift report per CLAUDE.md §3b against `docs/quality-bar.md`, or `/backfill <repo>` for structural drift; (2) **on editorial fold** — the session does a SURGICAL update: pick the most affected bedrock file (overview / architecture / conventions), add a 1–3 sentence reference under the relevant section, bump `last_revised:`, stamp `folded_into_bedrock:` on the topic, and leave the topic note body unchanged. The topic stays the deep dive; bedrock just gets a pointer + the load-bearing sentence | surfacing the drift/fold candidates | everything else: the user (in-session) decides and performs the revision |
+| **3+ episodes → topic note** | AUTOMATIC: the digest / post-edit signal issues a distillation contract; the session runs the `/promote` procedure itself (dedup-first merge into an existing topic, graph edges, tag canonicalization) | detection AND execution (the session distills without being asked) | veto only: set `rejected: true` on any note to stop it flowing; `reviewed_by_human` is optional signal |
+| **topic note → bedrock revision** | Two automatic in-session paths: (1) **on ingestion** — the ingestion report (upstream moved) is a contract: absorb the new behavior into the notes per CLAUDE.md §3b, or `/backfill <repo>` for structural change; (2) **on fold** — immediate at distillation time: a 1-3 sentence cross-linked reference in the most affected bedrock file, `folded_into_bedrock:` stamped, replace-not-append under the word budget | detection AND execution (contracts, no asking) | veto only (`rejected: true`) |
 | **research note → topic note** | Manual `Edit` (no API endpoint yet). Topic notes are the durable layer; research notes are intermediate | nothing — this is an editorial decision | full manual edit; bump `distilled_into:` on the research note |
 | **draft → walkthrough** | "promote to walkthrough" button on `/drafts/<slug>/` → POST `/api/promote-draft/<slug>` | the file move + frontmatter bump (`kind: draft → walkthrough`, `last_revised: today`) | the human decision to promote; review diff before commit |
 
@@ -201,7 +200,7 @@ seams.md  ←─(append-only)──  any layer whose insight crosses repos
 | Session log | ✓ (every session, always) | | |
 | Drift report | ✓ (SessionStart hook, always when behind) | | |
 | Stop hint | ✓ (fires if ≥3 edits and no episode) | | |
-| Episode content quality | | ✓ (the session writes; user reviews) | |
+| Episode content quality | | ✓ (the session writes; user may veto) | |
 | Promote candidates list | ✓ (≥3 same tag, not distilled) | | |
 | Topic note draft (from /promote) | | ✓ (the session distills; needs review) | |
 | Bedrock revision | | | ✓ (user-triggered) |

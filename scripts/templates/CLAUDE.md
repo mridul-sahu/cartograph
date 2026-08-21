@@ -35,7 +35,7 @@ about it?* Two slashes answer this in seconds.
 |---|---|---|
 | "What do we know about this **file** I'm about to open?" | `/whatknows <path>` | Reverse-index lookup. Every bedrock / topic / episode / learn note that cites the path, grouped by layer. |
 | "Where is this **symbol** mentioned anywhere?" | `/cite <sym>` | Fixed-string grep across all layers, capped per layer, grouped output. |
-| "What is the chassis asking me to review?" | `/queue` | Auto-drafted episodes / unblessed topics / open drift / leases / lint debt. |
+| "What is the chassis asking of me?" | `/queue` | Open contracts: pending drafts, ingestion reports, leases, lint debt. |
 
 **Rule:** if you are about to `Read` a file inside this workspace, run
 `/whatknows <that-path>` first. The path will almost certainly be cited
@@ -88,7 +88,7 @@ citation. You edit with the diff already in front of you — bump
 `last_revised:`, write the episode (§5 of cartograph CLAUDE.md), release
 the lease.
 
-### Default-approve semantics
+### Veto-only semantics
 
 Knowledge flows with no review gate; the user's only lever is the veto.
 Rejection is opt-out, not opt-in:
@@ -167,13 +167,11 @@ the orientation question that matters most.
 | `/pin <path>` | Bookmark a note for quick access on Home |
 
 **Active-writing discipline.** Every session that touched code AND learned
-something should leave a note. The chassis auto-drafts an episode for
-you on Stop (when ≥3 edits and no episode was written), but the
-auto-draft is approximate — preempt it with `/episode` if you have a
-clear insight. Likewise, if you read external material (paper, RFC,
-blog post), the Stop hook auto-drafts a paper note when WebFetch /
-WebSearch was logged — preempt with `/paper` when the auto-detector
-might miss it.
+something should leave a note. YOU write it: the Stop hook reminds
+(≥3 edits and no episode, or WebFetch / WebSearch logged with no
+research/paper note) and prints the discipline scorecard, but nothing
+drafts in the background. Write while the context is warm; a
+reconstruction from the session log never matches what you know now.
 
 The chassis commits every cartograph-content write at Stop (per
 `scripts/session-log.sh publish_content`) — you don't need to `git

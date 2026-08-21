@@ -1,4 +1,4 @@
-// ReviewButtons — in-place bless / reject for topics + auto-drafted episodes.
+// ReviewButtons — in-place bless (quality signal) / reject (veto) for notes.
 //
 // Posts to the existing review endpoints:
 //   POST /api/topic/{repo}/{topic}/review   { verdict: 'approve' | 'reject', notes? }

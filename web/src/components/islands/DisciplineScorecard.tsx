@@ -1,7 +1,7 @@
 // DisciplineScorecard — the §1a + §4 visibility surface on /console/.
 //
 // Pulls /api/discipline (last 5 sessions). Shows two things:
-//   1. Standing obligations  — auto-drafts to bless, topics to revise
+//   1. Standing items — vetoable drafts, topics to revise
 //   2. Per-session table     — edits / whatknows / cited-file edits
 //
 // The point isn't to shame the agent — it's to make the discipline
@@ -58,10 +58,10 @@ export default function DisciplineScorecard() {
       </div>
 
       <div className="px-4 py-3 border-b-2 border-border flex flex-wrap items-baseline gap-x-6 gap-y-2 font-mono text-xs">
-        <span className="text-muted uppercase tracking-widest text-[10px]">standing obligations</span>
+        <span className="text-muted uppercase tracking-widest text-[10px]">standing items</span>
         <span>
           <span className={standing.unblessed_auto_drafts > 0 ? 'text-[var(--warn)]' : 'text-[var(--ok)]'}>
-            {standing.unblessed_auto_drafts > 0 ? '⚠' : '✓'} unblessed auto-drafts: {standing.unblessed_auto_drafts}
+            {standing.unblessed_auto_drafts > 0 ? '·' : '✓'} drafts you could veto: {standing.unblessed_auto_drafts}
           </span>
           {standing.unblessed_auto_drafts > 0 && (
             <a href="/console/review/" className="ml-2 text-accent hover:underline">review →</a>

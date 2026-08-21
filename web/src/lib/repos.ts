@@ -2,7 +2,7 @@
 // Derived from guides/<repo>/overview.md at build time; mirrors the
 // filesystem-derived list in scripts/serve.py so the UI and API agree.
 // To add a repo, run `just add-repo <org/repo>` — the next build regenerates this.
-export const REPOS = ['jax', 'xla', 'orbax', 'tunix', 'tokamax', 'maxtext', 'qwix', 'sglang'] as const;
+export const REPOS = ['jax', 'xla', 'orbax', 'tunix', 'tokamax', 'kernels', 'maxtext', 'qwix', 'sglang'] as const;
 export type Repo = (typeof REPOS)[number];
 
 export const isRepo = (s: string): s is Repo =>

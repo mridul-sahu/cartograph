@@ -104,7 +104,7 @@ Cartograph wires into Claude Code's hook system via
 | `UserPromptSubmit` | Every user prompt | Inject context (the orientation hook) |
 | `PreToolUse` | Before any tool call | Augment context for `Read`/`Edit` of specific files |
 | `PostToolUse` | After any tool call | Capture what changed; normalize/lint |
-| `Stop` | Session ends | Auto-draft episodes, audit chassis usage |
+| `Stop` | Session ends | Discipline scorecard + reminders, audit chassis usage |
 
 To add a handler:
 
@@ -176,7 +176,8 @@ exit 0
 | `post-edit-topic-mark.sh` | PostToolUse:Edit/Write | Mark topics for re-review when cited files change |
 | `normalize-note-frontmatter.sh` | PostToolUse:Edit/Write | Backfill missing review-queue fields |
 | `session-stop.sh` | Stop | Dispatcher: episode reminder, usage audit, note-usage attribution, session-log stop |
-| `post-edit.sh` | PostToolUse:Edit/Write | Dispatcher for the four rows above it |
+| `distill-signal.sh` | PostToolUse:Edit/Write | Binding distillation contract when an episode's tag crosses threshold |
+| `post-edit.sh` | PostToolUse:Edit/Write | Dispatcher for the five rows above it |
 | `usage-audit.sh` | Stop | Chassis-utilization audit appended to session log |
 
 ---

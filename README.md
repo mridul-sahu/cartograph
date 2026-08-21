@@ -136,9 +136,10 @@ topics revise.
 The cartograph MCP server ships wired via `.mcp.json`; register it at
 user scope (`claude mcp add -s user`) and every Claude session on the
 machine can reach the corpus — query it, pull a repo's bedrock, and
-capture episodes or research notes from external projects
-(`cartograph_bedrock`, `cartograph_capture`). Captures enter the review
-queue with provenance; the read tools stay the model's mid-turn reach.
+capture episodes, research notes, or an external project's lightweight
+bedrock (`cartograph_bedrock`, `cartograph_capture`). Captures carry
+provenance and surface on the console for optional veto; the read tools
+stay the model's mid-turn reach.
 
 **`cartograph_search(query, repo?, layer?, k=10)`** — BM25 retrieval
 across every layer. Call before grepping.
@@ -233,6 +234,21 @@ or before recommending code that touches a cited line.
   ]
 }
 ```
+
+**`cartograph_bedrock(repo, file?)`** — a repo's "what this codebase
+is" orientation, for sessions running outside the injection. Tracked
+repos serve `overview` / `architecture` / `conventions` / `all`;
+external projects serve their lightweight single-file overview, and
+before one exists the call returns the project's topics and recent
+episodes to orient from instead.
+
+**`cartograph_capture(kind, project, title, body, ...)`** — the one
+write door from outside. `kind: episode | research | overview`; writes
+schema-correct frontmatter with `captured_from:` provenance, appends
+dated update sections instead of duplicating existing research notes or
+overviews, enforces the episode word ceiling, filters catch-all tags,
+and rebuilds the search indexes on write so the note is findable
+immediately. The serve daemon auto-commits it.
 
 ---
 

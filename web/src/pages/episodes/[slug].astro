@@ -78,7 +78,7 @@ const filesTouched = Array.isArray(doc.data.files_touched)
           {doc.data.synthesized_from_exploration && (
             <Chip>synthesized</Chip>
           )}
-          {autoDrafted && <Chip tone="warn">auto-drafted · review me</Chip>}
+          {autoDrafted && <Chip tone="warn">drafted/captured · veto if wrong</Chip>}
           {isStale && <Chip tone="warn">superseded</Chip>}
         </div>
         <h1 class="text-3xl md:text-4xl font-bold tracking-tightish font-mono break-words">
